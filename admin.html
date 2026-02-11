@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard • Parshwa</title>
+    <link rel="stylesheet" href="assets/css/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script defer src="assets/js/main.js" type="module"></script>
+  </head>
+  <body>
+    <main class="container" data-page="admin">
+      <section class="hero fade-up">
+        <span class="badge">Admin Dashboard</span>
+        <h1>Content Control</h1>
+        <p>Manage blogs and games. You must be logged in to use this page.</p>
+      </section>
+
+      <section class="split">
+        <div class="card fade-up delay-1" id="admin-card">
+          <div class="action-row" style="justify-content: space-between;">
+            <h2>Blog Posts</h2>
+            <button type="button" class="ghost-btn" id="logout-btn">Log out</button>
+          </div>
+          <form id="blog-form" class="form-stack">
+            <input type="hidden" name="id" />
+            <label>
+              Title
+              <input type="text" name="title" required />
+            </label>
+            <label>
+              Date
+              <input type="date" name="date" required />
+            </label>
+            <label>
+              Location
+              <input type="text" name="location" required />
+            </label>
+            <label>
+              Summary
+              <textarea name="summary" rows="3" required></textarea>
+            </label>
+            <div class="action-row">
+              <button type="submit" class="primary-btn" id="blog-submit">Add story</button>
+              <button type="button" class="ghost-btn" id="blog-cancel">Cancel edit</button>
+            </div>
+          </form>
+          <div id="blog-list" class="list-stack"></div>
+        </div>
+
+        <div class="card fade-up delay-2" id="games-card">
+          <h2>Games</h2>
+          <form id="games-form" class="form-stack">
+            <input type="hidden" name="id" />
+            <label>
+              Title
+              <input type="text" name="title" required />
+            </label>
+            <label>
+              Status
+              <input type="text" name="status" required />
+            </label>
+            <label>
+              Description
+              <textarea name="description" rows="3"></textarea>
+            </label>
+            <label>
+              Link
+              <input type="url" name="link" />
+            </label>
+            <label>
+              Server JS
+              <textarea name="serverJs" rows="6" placeholder="Paste server.js here"></textarea>
+            </label>
+            <label>
+              Client HTML
+              <textarea name="clientHtml" rows="6" placeholder="Paste client.html here"></textarea>
+            </label>
+            <div class="action-row">
+              <button type="submit" class="primary-btn" id="games-submit">Add game</button>
+              <button type="button" class="ghost-btn" id="games-cancel">Cancel edit</button>
+            </div>
+          </form>
+          <div id="games-list" class="list-stack"></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const tokenKey = "adminToken";
+      const authKey = "adminAuthAt";
+      const blogForm = document.getElementById("blog-form");
+      const blogSubmit = document.getElementById("blog-submit");
+      const blogCancel = document.getElementById("blog-cancel");
+      const blogList = document.getElementById("blog-list");
+      const gamesForm = document.getElementById("games-form");
+      const gamesSubmit = document.getElementById("games-submit");
+      const gamesCancel = document.getElementById("games-cancel");
+      const gamesList = document.getElementById("games-list");
+      const logoutBtn = document.getElementById("logout-btn");
+
+      let blogCache = [];
+      let gamesCache = [];
+
+      const getToken = () => localStorage.getItem(tokenKey);
+      const apiBase = `${window.location.protocol}//${window.location.hostname}:3000`;
+      const authTtlMs = 10 * 60 * 1000;
+
+      const request = (path, options = {}) => {
+        const token = getToken();
+        const headers = { "Content-Type": "application/json", ...options.headers };
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+        const url = new URL(path, apiBase);
+        return fetch(url.toString(), { ...options, headers });
+      };
+
+      const isAuthFresh = () => {
+        const last = Number(localStorage.getItem(authKey) || 0);
+        return Date.now() - last < authTtlMs;
+      };
+
+      const verifyAuth = async () => {
+        if (!getToken()) return false;
+        const res = await request("/api/admin/verify");
+        if (!res.ok) return false;
+        localStorage.setItem(authKey, String(Date.now()));
+        return true;
+      };
+
+      const setBlogMode = (post) => {
+        if (post) {
+          blogForm.id.value = post.id;
+          blogForm.title.value = post.title;
+          blogForm.date.value = post.date;
+          blogForm.location.value = post.location;
+          blogForm.summary.value = post.summary;
+          blogSubmit.textContent = "Update story";
+          blogCancel.style.display = "inline-flex";
+        } else {
+          blogForm.reset();
+          blogForm.id.value = "";
+          blogSubmit.textContent = "Add story";
+          blogCancel.style.display = "none";
+        }
+      };
+
+      const setGamesMode = (game) => {
+        if (game) {
+          gamesForm.id.value = game.id;
+          gamesForm.title.value = game.title;
+          gamesForm.status.value = game.status;
+          gamesForm.description.value = game.description || "";
+          gamesForm.link.value = game.link || "";
+          gamesForm.serverJs.value = game.serverJs || "";
+          gamesForm.clientHtml.value = game.clientHtml || "";
+          gamesSubmit.textContent = "Update game";
+          gamesCancel.style.display = "inline-flex";
+        } else {
+          gamesForm.reset();
+          gamesForm.id.value = "";
+          gamesSubmit.textContent = "Add game";
+          gamesCancel.style.display = "none";
+        }
+      };
+
+      const renderBlogList = () => {
+        blogList.innerHTML = "";
+        if (!blogCache.length) {
+          blogList.innerHTML = "<p class=\"helper\">No entries yet.</p>";
+          return;
+        }
+        blogCache.forEach((post) => {
+          const row = document.createElement("div");
+          row.className = "list-row";
+          row.innerHTML = `
+            <div>
+              <strong>${post.title}</strong>
+              <div class=\"meta\">${post.date} • ${post.location}</div>
+              <div class=\"meta\">${post.summary}</div>
+            </div>
+            <div class=\"action-row\">
+              <button type=\"button\" class=\"ghost-btn\">Edit</button>
+              <button type=\"button\" class=\"ghost-btn\">Delete</button>
+            </div>
+          `;
+          const buttons = row.querySelectorAll("button");
+          buttons[0].addEventListener("click", () => setBlogMode(post));
+          buttons[1].addEventListener("click", async () => {
+            await request(`/api/blog/${post.id}`, { method: "DELETE" });
+            await loadBlogs();
+          });
+          blogList.appendChild(row);
+        });
+      };
+
+      const renderGamesList = () => {
+        gamesList.innerHTML = "";
+        if (!gamesCache.length) {
+          gamesList.innerHTML = "<p class=\"helper\">No entries yet.</p>";
+          return;
+        }
+        gamesCache.forEach((game) => {
+          const row = document.createElement("div");
+          row.className = "list-row";
+          row.innerHTML = `
+            <div>
+              <strong>${game.title}</strong>
+              <div class=\"meta\">${game.status}</div>
+              ${game.description ? `<div class=\"meta\">${game.description}</div>` : ""}
+              ${game.link ? `<div class=\"meta\">${game.link}</div>` : ""}
+              ${game.serverJs ? `<div class=\"meta\">Server JS attached</div>` : ""}
+              ${game.clientHtml ? `<div class=\"meta\">Client HTML attached</div>` : ""}
+            </div>
+            <div class=\"action-row\">
+              <button type=\"button\" class=\"ghost-btn\">Edit</button>
+              <button type=\"button\" class=\"ghost-btn\">Delete</button>
+            </div>
+          `;
+          const buttons = row.querySelectorAll("button");
+          buttons[0].addEventListener("click", () => setGamesMode(game));
+          buttons[1].addEventListener("click", async () => {
+            await request(`/api/games/${game.id}`, { method: "DELETE" });
+            await loadGames();
+          });
+          gamesList.appendChild(row);
+        });
+      };
+
+      const loadBlogs = async () => {
+        const res = await request("/api/blog");
+        if (!res.ok) return;
+        const data = await res.json();
+        blogCache = data;
+        renderBlogList();
+      };
+
+      const loadGames = async () => {
+        const res = await request("/api/games");
+        if (!res.ok) return;
+        const data = await res.json();
+        gamesCache = data;
+        renderGamesList();
+      };
+
+      blogForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!(await verifyAuth())) {
+          window.location.href = "login.html";
+          return;
+        }
+        const payload = {
+          title: blogForm.title.value,
+          date: blogForm.date.value,
+          location: blogForm.location.value,
+          summary: blogForm.summary.value,
+        };
+        const id = blogForm.id.value;
+        const res = await request(id ? `/api/blog/${id}` : "/api/blog", {
+          method: id ? "PUT" : "POST",
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          setBlogMode(null);
+          await loadBlogs();
+        }
+      });
+
+      gamesForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!(await verifyAuth())) {
+          window.location.href = "login.html";
+          return;
+        }
+        const payload = {
+          title: gamesForm.title.value,
+          status: gamesForm.status.value,
+          description: gamesForm.description.value,
+          link: gamesForm.link.value,
+          serverJs: gamesForm.serverJs.value,
+          clientHtml: gamesForm.clientHtml.value,
+        };
+        const id = gamesForm.id.value;
+        const res = await request(id ? `/api/games/${id}` : "/api/games", {
+          method: id ? "PUT" : "POST",
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          setGamesMode(null);
+          await loadGames();
+        }
+      });
+
+      blogCancel.addEventListener("click", () => setBlogMode(null));
+      gamesCancel.addEventListener("click", () => setGamesMode(null));
+
+      logoutBtn.addEventListener("click", () => {
+        localStorage.removeItem(tokenKey);
+        window.location.href = "login.html";
+      });
+
+      const init = async () => {
+        const token = getToken();
+        if (!token) {
+          window.location.href = "login.html";
+          return;
+        }
+        if (!isAuthFresh()) {
+          const ok = await verifyAuth();
+          if (!ok) {
+            window.location.href = "login.html";
+            return;
+          }
+        }
+        setBlogMode(null);
+        setGamesMode(null);
+        await loadBlogs();
+        await loadGames();
+      };
+
+      init();
+
+      setInterval(async () => {
+        if (getToken()) {
+          await verifyAuth();
+        }
+      }, authTtlMs);
+    </script>
+  </body>
+</html>

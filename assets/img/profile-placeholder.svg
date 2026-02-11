@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="600" viewBox="0 0 480 600" role="img" aria-label="Profile placeholder">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e2e8f0" />
+      <stop offset="1" stop-color="#f8fafc" />
+    </linearGradient>
+  </defs>
+  <rect width="480" height="600" rx="36" fill="url(#bg)" />
+  <g fill="none" stroke="#cbd5f5" stroke-width="2">
+    <path d="M40 100h400" />
+    <path d="M40 160h400" />
+    <path d="M40 220h400" />
+    <path d="M40 280h400" />
+    <path d="M40 340h400" />
+    <path d="M40 400h400" />
+  </g>
+  <circle cx="240" cy="230" r="70" fill="#dbeafe" />
+  <path d="M140 470c30-70 90-110 200-110s170 40 200 110" fill="#bfdbfe" />
+  <text x="50%" y="545" text-anchor="middle" font-family="Space Grotesk, Arial, sans-serif" font-size="20" fill="#64748b">Add your photo</text>
+</svg>
