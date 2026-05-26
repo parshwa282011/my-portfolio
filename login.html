@@ -44,10 +44,11 @@
       const tokenKey = "adminToken";
       const authKey = "adminAuthAt";
       const loginStatus = document.getElementById("login-status");
+      const serverUrl = "https://my-portfolio-gmh1.onrender.com";
       const apiBase =
         window.location.protocol === "file:"
           ? "http://localhost:3000"
-          : window.location.origin;
+          : serverUrl;
 
       const request = (path, options = {}) => {
         const headers = { "Content-Type": "application/json", ...options.headers };

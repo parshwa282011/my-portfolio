@@ -2,11 +2,12 @@ import { renderNav } from "../../components/nav.js";
 import { renderFooter } from "../../components/footer.js";
 
 const root = document.querySelector("[data-page]");
+const SERVER_URL = "https://my-portfolio-gmh1.onrender.com";
 const getApiBase = () => {
   if (window.location.protocol === "file:") {
     return "http://localhost:3000";
   }
-  return window.location.origin;
+  return SERVER_URL;
 };
 
 const savedTheme = localStorage.getItem("siteTheme");
