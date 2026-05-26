@@ -1,21 +1,42 @@
+import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { spawn, spawnSync } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 3000;
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors());
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Not allowed by CORS"));
+    },
+  })
+);
 app.use(express.json());
+app.use(express.static(__dirname));
 
-const ADMIN_USER = "p";
-const ADMIN_PASS = "a";
-const ADMIN_TOKEN = "admin_token_9f3c2";
+const ADMIN_USER = process.env.ADMIN_USER;
+const ADMIN_PASS = process.env.ADMIN_PASS;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+
+if (!ADMIN_USER || !ADMIN_PASS || !ADMIN_TOKEN) {
+  throw new Error("Missing ADMIN_USER, ADMIN_PASS, or ADMIN_TOKEN in environment.");
+}
 
 const dataPath = (name) => path.join(__dirname, "data", name);
 
@@ -82,7 +103,7 @@ app.get("/api/blog", async (req, res) => {
 
 app.post("/api/blog", requireAdmin, async (req, res) => {
   try {
-    const { title, date, location, summary } = req.body || {};
+    const { title, date, location, summary, contentHtml } = req.body || {};
     if (!title || !date || !location || !summary) {
       res.status(400).json({ error: "Missing fields." });
       return;
@@ -95,6 +116,7 @@ app.post("/api/blog", requireAdmin, async (req, res) => {
         date,
         location,
         summary,
+        contentHtml: contentHtml || "",
       },
       ...posts,
     ];
@@ -107,7 +129,7 @@ app.post("/api/blog", requireAdmin, async (req, res) => {
 
 app.put("/api/blog/:id", requireAdmin, async (req, res) => {
   try {
-    const { title, date, location, summary } = req.body || {};
+    const { title, date, location, summary, contentHtml } = req.body || {};
     if (!title || !date || !location || !summary) {
       res.status(400).json({ error: "Missing fields." });
       return;
@@ -115,7 +137,7 @@ app.put("/api/blog/:id", requireAdmin, async (req, res) => {
     const posts = await readJson("blog.json", []);
     const next = posts.map((post) =>
       post.id === req.params.id
-        ? { ...post, title, date, location, summary }
+        ? { ...post, title, date, location, summary, contentHtml }
         : post
     );
     await writeJson("blog.json", next);
@@ -136,81 +158,44 @@ app.delete("/api/blog/:id", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/games", async (req, res) => {
+app.post("/api/custom-requests", async (req, res) => {
   try {
-    const games = await readJson("games.json", []);
-    const normalized = await ensureIds("games.json", games);
-    res.json(normalized);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to load games." });
-  }
-});
-
-app.post("/api/games", requireAdmin, async (req, res) => {
-  try {
-    const { title, status, description, link, serverJs, clientHtml } = req.body || {};
-    if (!title || !status) {
-      res.status(400).json({ error: "Missing fields." });
+    const { name, email, pageType, budget, timeline, details } = req.body || {};
+    if (!name || !email || !pageType || !details) {
+      res.status(400).json({ error: "Please fill out the required fields." });
       return;
     }
-    const games = await readJson("games.json", []);
+
+    const requests = await readJson("custom-requests.json", []);
     const next = [
       {
-        id: `game_${Date.now()}`,
-        title,
-        status,
-        description: description || "",
-        link: link || "",
-        serverJs: serverJs || "",
-        clientHtml: clientHtml || "",
+        id: `request_${Date.now()}`,
+        name,
+        email,
+        pageType,
+        budget: budget || "",
+        timeline: timeline || "",
+        details,
+        createdAt: new Date().toISOString(),
       },
-      ...games,
+      ...requests,
     ];
-    await writeJson("games.json", next);
-    res.json(next);
+    await writeJson("custom-requests.json", next);
+    res.status(201).json({ ok: true });
   } catch (error) {
-    res.status(500).json({ error: "Failed to save game." });
+    res.status(500).json({ error: "Failed to save request." });
   }
 });
 
-app.put("/api/games/:id", requireAdmin, async (req, res) => {
+app.get("/api/custom-requests", requireAdmin, async (req, res) => {
   try {
-    const { title, status, description, link, serverJs, clientHtml } = req.body || {};
-    if (!title || !status) {
-      res.status(400).json({ error: "Missing fields." });
-      return;
-    }
-    const games = await readJson("games.json", []);
-    const next = games.map((game) =>
-      game.id === req.params.id
-        ? {
-            ...game,
-            title,
-            status,
-            description: description || "",
-            link: link || "",
-            serverJs: serverJs || "",
-            clientHtml: clientHtml || "",
-          }
-        : game
-    );
-    await writeJson("games.json", next);
-    res.json(next);
+    const requests = await readJson("custom-requests.json", []);
+    res.json(requests);
   } catch (error) {
-    res.status(500).json({ error: "Failed to update game." });
+    res.status(500).json({ error: "Failed to load requests." });
   }
 });
 
-app.delete("/api/games/:id", requireAdmin, async (req, res) => {
-  try {
-    const games = await readJson("games.json", []);
-    const next = games.filter((game) => game.id !== req.params.id);
-    await writeJson("games.json", next);
-    res.json(next);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to delete game." });
-  }
-});
 
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });

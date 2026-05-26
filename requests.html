@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Custom Pages • Parshwa</title>
+    <link rel="stylesheet" href="assets/css/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script defer src="assets/js/main.js" type="module"></script>
+  </head>
+  <body>
+    <main class="container" data-page="requests">
+      <section class="hero fade-up">
+        <div class="hero-content">
+          <span class="badge">Custom Websites</span>
+          <h1>Request a Page</h1>
+          <p>
+            Need a portfolio, landing page, event page, or something custom?
+            Send the details and I will review the idea.
+          </p>
+        </div>
+      </section>
+
+      <section class="split">
+        <div class="card fade-up delay-1">
+          <h2>Project Request</h2>
+          <form class="form-stack" data-custom-request-form>
+            <label>
+              Name
+              <input type="text" name="name" autocomplete="name" required />
+            </label>
+            <label>
+              Email
+              <input type="email" name="email" autocomplete="email" required />
+            </label>
+            <label>
+              Page type
+              <select name="pageType" required>
+                <option value="">Choose one</option>
+                <option>Portfolio</option>
+                <option>Business landing page</option>
+                <option>Event page</option>
+                <option>Club or school page</option>
+                <option>Other custom page</option>
+              </select>
+            </label>
+            <div class="form-grid">
+              <label>
+                Budget
+                <input type="text" name="budget" placeholder="Optional" />
+              </label>
+              <label>
+                Timeline
+                <input type="text" name="timeline" placeholder="Optional" />
+              </label>
+            </div>
+            <label>
+              Details
+              <textarea
+                name="details"
+                rows="6"
+                placeholder="Tell me what the page should include, who it is for, and any links or examples you like."
+                required
+              ></textarea>
+            </label>
+            <button type="submit" class="primary-btn">Send request</button>
+          </form>
+          <p class="helper" data-request-status></p>
+        </div>
+
+        <div class="card fade-up delay-2">
+          <h2>Good Fits</h2>
+          <ul>
+            <li>Personal portfolios</li>
+            <li>Startup or club pages</li>
+            <li>Simple product pages</li>
+            <li>Hackathon and event pages</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

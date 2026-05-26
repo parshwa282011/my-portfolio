@@ -2,6 +2,20 @@ import { renderNav } from "../../components/nav.js";
 import { renderFooter } from "../../components/footer.js";
 
 const root = document.querySelector("[data-page]");
+const getApiBase = () => {
+  if (window.location.protocol === "file:") {
+    return "http://localhost:3000";
+  }
+  return window.location.origin;
+};
+
+const savedTheme = localStorage.getItem("siteTheme");
+const prefersDark =
+  window.matchMedia &&
+  window.matchMedia("(prefers-color-scheme: dark)").matches;
+const initialTheme = savedTheme || (prefersDark ? "dark" : "light");
+document.documentElement.dataset.theme = initialTheme;
+
 const restrictedPages = new Set(["secret", "login", "admin"]);
 if (root) {
   const pageName = root.getAttribute("data-page");
@@ -14,7 +28,28 @@ const mountNav = () => {
   const nav = renderNav(window.location.pathname);
 
   const toggle = nav.querySelector(".nav-toggle");
+  const themeToggle = nav.querySelector(".theme-toggle");
   const linkWrap = nav.querySelector(".nav-links");
+  const syncThemeToggle = () => {
+    if (!themeToggle) return;
+    const isDark = document.documentElement.dataset.theme === "dark";
+    themeToggle.setAttribute("aria-pressed", String(isDark));
+    themeToggle.querySelector(".theme-toggle-text").textContent = isDark
+      ? "Light"
+      : "Dark";
+  };
+
+  syncThemeToggle();
+  if (themeToggle) {
+    themeToggle.addEventListener("click", () => {
+      const nextTheme =
+        document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = nextTheme;
+      localStorage.setItem("siteTheme", nextTheme);
+      syncThemeToggle();
+    });
+  }
+
   if (toggle) {
     toggle.addEventListener("click", () => {
       const isOpen = nav.classList.toggle("nav-open");
@@ -134,7 +169,7 @@ const openOverlay = (html) => {
 
 const blogContainer = document.querySelector("[data-blog]");
 if (blogContainer) {
-  const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
+  const API_BASE = getApiBase();
   const renderPosts = (posts) => {
     blogContainer.innerHTML = "";
     posts.forEach((post, index) => {
@@ -190,77 +225,40 @@ if (blogContainer) {
   loadPosts();
 }
 
-const gamesGrid = document.getElementById("games-grid");
-if (gamesGrid) {
-  const API_BASE = `${window.location.protocol}//${window.location.hostname}:3000`;
-  const renderGames = (games) => {
-    gamesGrid.innerHTML = "";
-    if (!games.length) {
-      gamesGrid.innerHTML = "<p class=\"helper\">No games yet.</p>";
-      return;
-    }
-    games.forEach((game, index) => {
-      const block = document.createElement("article");
-      block.className = "blog-block fade-up";
-      block.style.animationDelay = `${index * 0.1}s`;
-      block.innerHTML = `
-        <button type="button" class="title-button">${game.title}</button>
-      `;
-      const button = block.querySelector(".title-button");
-      button.addEventListener("click", () => {
-        const details = [
-          game.status ? `<div class="blog-meta">${game.status}</div>` : "",
-          game.description ? `<p>${game.description}</p>` : "",
-          game.serverJs || game.clientHtml
-            ? `<p class="helper">Assets available: ${[
-                game.serverJs ? "server.js" : "",
-                game.clientHtml ? "client.html" : "",
-              ]
-                .filter(Boolean)
-                .join(", ")}</p>`
-            : "",
-          game.link
-            ? `<p><a href="${game.link}" target="_blank" rel="noopener noreferrer">Play</a></p>`
-            : "",
-        ].join("");
-        openOverlay(`
-          <h2>${game.title}</h2>
-          <div class="overlay-body">${details}</div>
-        `);
-      });
-      gamesGrid.appendChild(block);
-    });
-
-    const animatedBlocks = gamesGrid.querySelectorAll(".fade-up");
-    if (animatedBlocks.length) {
-      const observer = new IntersectionObserver(
-        (entries, obs) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              entry.target.classList.add("in-view");
-              obs.unobserve(entry.target);
-            }
-          });
-        },
-        { threshold: 0.18, rootMargin: "0px 0px -10% 0px" }
-      );
-      animatedBlocks.forEach((el) => observer.observe(el));
-    }
+const requestForm = document.querySelector("[data-custom-request-form]");
+if (requestForm) {
+  const status = document.querySelector("[data-request-status]");
+  const setStatus = (message, type = "") => {
+    if (!status) return;
+    status.textContent = message;
+    status.dataset.status = type;
   };
 
-  const loadGames = async () => {
+  requestForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    setStatus("Sending request...");
+
+    const formData = new FormData(requestForm);
+    const payload = Object.fromEntries(formData.entries());
+
     try {
-      const response = await fetch(`${API_BASE}/api/games`);
-      if (!response.ok) {
-        throw new Error("Failed to load games.");
-      }
-      const games = await response.json();
-      renderGames(games);
-    } catch (error) {
-      gamesGrid.innerHTML =
-        "<p>Could not load games. Please try again later.</p>";
-    }
-  };
+      const response = await fetch(`${getApiBase()}/api/custom-requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-  loadGames();
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || "Could not send request.");
+      }
+
+      requestForm.reset();
+      setStatus("Request sent. I will review it soon.", "success");
+    } catch (error) {
+      setStatus(error.message, "error");
+    }
+  });
 }
+
+export { getApiBase };

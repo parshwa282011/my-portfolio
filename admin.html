@@ -18,7 +18,7 @@
       <section class="hero fade-up">
         <span class="badge">Admin Dashboard</span>
         <h1>Content Control</h1>
-        <p>Manage blogs and games. You must be logged in to use this page.</p>
+        <p>Manage blogs. You must be logged in to use this page.</p>
       </section>
 
       <section class="split">
@@ -45,6 +45,10 @@
               Summary
               <textarea name="summary" rows="3" required></textarea>
             </label>
+            <label>
+              Content (HTML)
+              <textarea name="contentHtml" rows="6" placeholder="Enter HTML content for the blog post..."></textarea>
+            </label>
             <div class="action-row">
               <button type="submit" class="primary-btn" id="blog-submit">Add story</button>
               <button type="button" class="ghost-btn" id="blog-cancel">Cancel edit</button>
@@ -52,41 +56,9 @@
           </form>
           <div id="blog-list" class="list-stack"></div>
         </div>
-
-        <div class="card fade-up delay-2" id="games-card">
-          <h2>Games</h2>
-          <form id="games-form" class="form-stack">
-            <input type="hidden" name="id" />
-            <label>
-              Title
-              <input type="text" name="title" required />
-            </label>
-            <label>
-              Status
-              <input type="text" name="status" required />
-            </label>
-            <label>
-              Description
-              <textarea name="description" rows="3"></textarea>
-            </label>
-            <label>
-              Link
-              <input type="url" name="link" />
-            </label>
-            <label>
-              Server JS
-              <textarea name="serverJs" rows="6" placeholder="Paste server.js here"></textarea>
-            </label>
-            <label>
-              Client HTML
-              <textarea name="clientHtml" rows="6" placeholder="Paste client.html here"></textarea>
-            </label>
-            <div class="action-row">
-              <button type="submit" class="primary-btn" id="games-submit">Add game</button>
-              <button type="button" class="ghost-btn" id="games-cancel">Cancel edit</button>
-            </div>
-          </form>
-          <div id="games-list" class="list-stack"></div>
+        <div class="card fade-up delay-2">
+          <h2>Custom Page Requests</h2>
+          <div id="request-list" class="list-stack"></div>
         </div>
       </section>
     </main>
@@ -98,17 +70,17 @@
       const blogSubmit = document.getElementById("blog-submit");
       const blogCancel = document.getElementById("blog-cancel");
       const blogList = document.getElementById("blog-list");
-      const gamesForm = document.getElementById("games-form");
-      const gamesSubmit = document.getElementById("games-submit");
-      const gamesCancel = document.getElementById("games-cancel");
-      const gamesList = document.getElementById("games-list");
+      const requestList = document.getElementById("request-list");
       const logoutBtn = document.getElementById("logout-btn");
 
       let blogCache = [];
-      let gamesCache = [];
+      let requestCache = [];
 
       const getToken = () => localStorage.getItem(tokenKey);
-      const apiBase = `${window.location.protocol}//${window.location.hostname}:3000`;
+      const apiBase =
+        window.location.protocol === "file:"
+          ? "http://localhost:3000"
+          : window.location.origin;
       const authTtlMs = 10 * 60 * 1000;
 
       const request = (path, options = {}) => {
@@ -141,6 +113,7 @@
           blogForm.date.value = post.date;
           blogForm.location.value = post.location;
           blogForm.summary.value = post.summary;
+          blogForm.contentHtml.value = post.contentHtml || "";
           blogSubmit.textContent = "Update story";
           blogCancel.style.display = "inline-flex";
         } else {
@@ -148,25 +121,6 @@
           blogForm.id.value = "";
           blogSubmit.textContent = "Add story";
           blogCancel.style.display = "none";
-        }
-      };
-
-      const setGamesMode = (game) => {
-        if (game) {
-          gamesForm.id.value = game.id;
-          gamesForm.title.value = game.title;
-          gamesForm.status.value = game.status;
-          gamesForm.description.value = game.description || "";
-          gamesForm.link.value = game.link || "";
-          gamesForm.serverJs.value = game.serverJs || "";
-          gamesForm.clientHtml.value = game.clientHtml || "";
-          gamesSubmit.textContent = "Update game";
-          gamesCancel.style.display = "inline-flex";
-        } else {
-          gamesForm.reset();
-          gamesForm.id.value = "";
-          gamesSubmit.textContent = "Add game";
-          gamesCancel.style.display = "none";
         }
       };
 
@@ -200,54 +154,60 @@
         });
       };
 
-      const renderGamesList = () => {
-        gamesList.innerHTML = "";
-        if (!gamesCache.length) {
-          gamesList.innerHTML = "<p class=\"helper\">No entries yet.</p>";
+      const renderRequestList = () => {
+        requestList.innerHTML = "";
+        if (!requestCache.length) {
+          requestList.innerHTML = "<p class=\"helper\">No custom page requests yet.</p>";
           return;
         }
-        gamesCache.forEach((game) => {
+        requestCache.forEach((item) => {
           const row = document.createElement("div");
           row.className = "list-row";
-          row.innerHTML = `
-            <div>
-              <strong>${game.title}</strong>
-              <div class=\"meta\">${game.status}</div>
-              ${game.description ? `<div class=\"meta\">${game.description}</div>` : ""}
-              ${game.link ? `<div class=\"meta\">${game.link}</div>` : ""}
-              ${game.serverJs ? `<div class=\"meta\">Server JS attached</div>` : ""}
-              ${game.clientHtml ? `<div class=\"meta\">Client HTML attached</div>` : ""}
-            </div>
-            <div class=\"action-row\">
-              <button type=\"button\" class=\"ghost-btn\">Edit</button>
-              <button type=\"button\" class=\"ghost-btn\">Delete</button>
-            </div>
-          `;
-          const buttons = row.querySelectorAll("button");
-          buttons[0].addEventListener("click", () => setGamesMode(game));
-          buttons[1].addEventListener("click", async () => {
-            await request(`/api/games/${game.id}`, { method: "DELETE" });
-            await loadGames();
-          });
-          gamesList.appendChild(row);
+          const content = document.createElement("div");
+          const title = document.createElement("strong");
+          const contact = document.createElement("div");
+          const projectMeta = document.createElement("div");
+          const details = document.createElement("p");
+
+          title.textContent = item.pageType;
+          contact.className = "meta";
+          contact.textContent = `${item.name} • ${item.email}`;
+          projectMeta.className = "meta";
+          projectMeta.textContent = `${item.timeline || "No timeline"} • ${
+            item.budget || "No budget"
+          }`;
+          details.textContent = item.details;
+
+          content.append(title, contact, projectMeta, details);
+          row.appendChild(content);
+          requestList.appendChild(row);
         });
       };
 
+
       const loadBlogs = async () => {
         const res = await request("/api/blog");
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.error("Failed to load blogs:", res.status, res.statusText);
+          return;
+        }
         const data = await res.json();
+        console.log("Loaded blog data:", data);
         blogCache = data;
         renderBlogList();
       };
 
-      const loadGames = async () => {
-        const res = await request("/api/games");
-        if (!res.ok) return;
-        const data = await res.json();
-        gamesCache = data;
-        renderGamesList();
+      const loadRequests = async () => {
+        const res = await request("/api/custom-requests");
+        if (!res.ok) {
+          requestList.innerHTML = "<p class=\"helper\">Could not load requests.</p>";
+          return;
+        }
+        requestCache = await res.json();
+        renderRequestList();
       };
+
+
 
       blogForm.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -260,6 +220,7 @@
           date: blogForm.date.value,
           location: blogForm.location.value,
           summary: blogForm.summary.value,
+          contentHtml: blogForm.contentHtml.value,
         };
         const id = blogForm.id.value;
         const res = await request(id ? `/api/blog/${id}` : "/api/blog", {
@@ -272,33 +233,7 @@
         }
       });
 
-      gamesForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (!(await verifyAuth())) {
-          window.location.href = "login.html";
-          return;
-        }
-        const payload = {
-          title: gamesForm.title.value,
-          status: gamesForm.status.value,
-          description: gamesForm.description.value,
-          link: gamesForm.link.value,
-          serverJs: gamesForm.serverJs.value,
-          clientHtml: gamesForm.clientHtml.value,
-        };
-        const id = gamesForm.id.value;
-        const res = await request(id ? `/api/games/${id}` : "/api/games", {
-          method: id ? "PUT" : "POST",
-          body: JSON.stringify(payload),
-        });
-        if (res.ok) {
-          setGamesMode(null);
-          await loadGames();
-        }
-      });
-
       blogCancel.addEventListener("click", () => setBlogMode(null));
-      gamesCancel.addEventListener("click", () => setGamesMode(null));
 
       logoutBtn.addEventListener("click", () => {
         localStorage.removeItem(tokenKey);
@@ -319,9 +254,10 @@
           }
         }
         setBlogMode(null);
-        setGamesMode(null);
+        console.log("Loading blogs...");
         await loadBlogs();
-        await loadGames();
+        await loadRequests();
+        console.log("Initial load complete");
       };
 
       init();

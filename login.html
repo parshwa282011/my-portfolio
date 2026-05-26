@@ -44,7 +44,10 @@
       const tokenKey = "adminToken";
       const authKey = "adminAuthAt";
       const loginStatus = document.getElementById("login-status");
-      const apiBase = `${window.location.protocol}//${window.location.hostname}:3000`;
+      const apiBase =
+        window.location.protocol === "file:"
+          ? "http://localhost:3000"
+          : window.location.origin;
 
       const request = (path, options = {}) => {
         const headers = { "Content-Type": "application/json", ...options.headers };

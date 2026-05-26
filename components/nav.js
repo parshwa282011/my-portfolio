@@ -3,6 +3,7 @@ export function renderNav(activePath) {
     { href: "about.html", label: "About" },
     { href: "blog.html", label: "Blog" },
     { href: "projects.html", label: "Passion Projects" },
+    { href: "requests.html", label: "Custom Pages" },
     { href: "socials.html", label: "Ways to Connect" },
     { href: "activities.html", label: "Activities" },
   ];
@@ -52,9 +53,22 @@ export function renderNav(activePath) {
     linkWrap.appendChild(anchor);
   });
 
+  const actions = document.createElement("div");
+  actions.className = "nav-actions";
+
+  const themeToggle = document.createElement("button");
+  themeToggle.className = "theme-toggle";
+  themeToggle.type = "button";
+  themeToggle.setAttribute("aria-label", "Switch theme");
+  themeToggle.setAttribute("aria-pressed", "false");
+  themeToggle.innerHTML = `<span class="theme-toggle-icon" aria-hidden="true"></span><span class="theme-toggle-text">Dark</span>`;
+
+  actions.appendChild(themeToggle);
+  actions.appendChild(toggle);
+
   nav.appendChild(brand);
-  nav.appendChild(toggle);
   nav.appendChild(linkWrap);
+  nav.appendChild(actions);
 
   return nav;
 }
