@@ -18,7 +18,7 @@
       <section class="hero fade-up">
         <span class="badge">Admin Dashboard</span>
         <h1>Content Control</h1>
-        <p>Manage blogs. You must be logged in to use this page.</p>
+        <p>Manage blogs, projects, games, and requests. You must be logged in to use this page.</p>
       </section>
 
       <section class="split">
@@ -57,6 +57,59 @@
           <div id="blog-list" class="list-stack"></div>
         </div>
         <div class="card fade-up delay-2">
+          <h2>Projects + Games</h2>
+          <form id="project-form" class="form-stack">
+            <input type="hidden" name="id" />
+            <label>
+              Title
+              <input type="text" name="title" required />
+            </label>
+            <div class="form-grid">
+              <label>
+                Type
+                <select name="kind" required>
+                  <option value="project">Project</option>
+                  <option value="game">Game</option>
+                  <option value="tool">Tool</option>
+                  <option value="experiment">Experiment</option>
+                </select>
+              </label>
+              <label>
+                Visibility
+                <select name="visibility" required>
+                  <option value="public">Public</option>
+                  <option value="secret">Secret</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              Status
+              <input type="text" name="status" placeholder="Live, beta, prototype..." required />
+            </label>
+            <label>
+              Description
+              <textarea name="description" rows="3"></textarea>
+            </label>
+            <label>
+              External link
+              <input type="url" name="link" placeholder="Optional" />
+            </label>
+            <label>
+              Runnable HTML
+              <textarea
+                name="clientHtml"
+                rows="8"
+                placeholder="Paste a full HTML game or mini project here. It will run on /play/:id."
+              ></textarea>
+            </label>
+            <div class="action-row">
+              <button type="submit" class="primary-btn" id="project-submit">Add project</button>
+              <button type="button" class="ghost-btn" id="project-cancel">Cancel edit</button>
+            </div>
+          </form>
+          <div id="project-list" class="list-stack"></div>
+        </div>
+        <div class="card fade-up delay-3">
           <h2>Custom Page Requests</h2>
           <div id="request-list" class="list-stack"></div>
         </div>
@@ -70,10 +123,15 @@
       const blogSubmit = document.getElementById("blog-submit");
       const blogCancel = document.getElementById("blog-cancel");
       const blogList = document.getElementById("blog-list");
+      const projectForm = document.getElementById("project-form");
+      const projectSubmit = document.getElementById("project-submit");
+      const projectCancel = document.getElementById("project-cancel");
+      const projectList = document.getElementById("project-list");
       const requestList = document.getElementById("request-list");
       const logoutBtn = document.getElementById("logout-btn");
 
       let blogCache = [];
+      let projectCache = [];
       let requestCache = [];
 
       const getToken = () => localStorage.getItem(tokenKey);
@@ -184,6 +242,58 @@
         });
       };
 
+      const setProjectMode = (project) => {
+        if (project) {
+          projectForm.id.value = project.id;
+          projectForm.title.value = project.title;
+          projectForm.kind.value = project.kind;
+          projectForm.visibility.value = project.visibility;
+          projectForm.status.value = project.status;
+          projectForm.description.value = project.description || "";
+          projectForm.link.value = project.link || "";
+          projectForm.clientHtml.value = project.clientHtml || "";
+          projectSubmit.textContent = "Update project";
+          projectCancel.style.display = "inline-flex";
+        } else {
+          projectForm.reset();
+          projectForm.id.value = "";
+          projectSubmit.textContent = "Add project";
+          projectCancel.style.display = "none";
+        }
+      };
+
+      const renderProjectList = () => {
+        projectList.innerHTML = "";
+        if (!projectCache.length) {
+          projectList.innerHTML = "<p class=\"helper\">No projects yet.</p>";
+          return;
+        }
+        projectCache.forEach((project) => {
+          const row = document.createElement("div");
+          row.className = "list-row";
+          row.innerHTML = `
+            <div>
+              <strong>${project.title}</strong>
+              <div class=\"meta\">${project.kind} • ${project.visibility} • ${project.status}</div>
+              <div class=\"meta\">${project.description || ""}</div>
+              ${project.clientHtml ? `<div class=\"meta\">Runs at /play/${project.id}</div>` : ""}
+              ${project.link ? `<div class=\"meta\">${project.link}</div>` : ""}
+            </div>
+            <div class=\"action-row\">
+              <button type=\"button\" class=\"ghost-btn\">Edit</button>
+              <button type=\"button\" class=\"ghost-btn\">Delete</button>
+            </div>
+          `;
+          const buttons = row.querySelectorAll("button");
+          buttons[0].addEventListener("click", () => setProjectMode(project));
+          buttons[1].addEventListener("click", async () => {
+            await request(`/api/projects/${project.id}`, { method: "DELETE" });
+            await loadProjects();
+          });
+          projectList.appendChild(row);
+        });
+      };
+
 
       const loadBlogs = async () => {
         const res = await request("/api/blog");
@@ -195,6 +305,16 @@
         console.log("Loaded blog data:", data);
         blogCache = data;
         renderBlogList();
+      };
+
+      const loadProjects = async () => {
+        const res = await request("/api/admin/projects");
+        if (!res.ok) {
+          projectList.innerHTML = "<p class=\"helper\">Could not load projects.</p>";
+          return;
+        }
+        projectCache = await res.json();
+        renderProjectList();
       };
 
       const loadRequests = async () => {
@@ -234,6 +354,33 @@
       });
 
       blogCancel.addEventListener("click", () => setBlogMode(null));
+      projectForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!(await verifyAuth())) {
+          window.location.href = "login.html";
+          return;
+        }
+        const payload = {
+          title: projectForm.title.value,
+          kind: projectForm.kind.value,
+          visibility: projectForm.visibility.value,
+          status: projectForm.status.value,
+          description: projectForm.description.value,
+          link: projectForm.link.value,
+          clientHtml: projectForm.clientHtml.value,
+        };
+        const id = projectForm.id.value;
+        const res = await request(id ? `/api/projects/${id}` : "/api/projects", {
+          method: id ? "PUT" : "POST",
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          setProjectMode(null);
+          await loadProjects();
+        }
+      });
+
+      projectCancel.addEventListener("click", () => setProjectMode(null));
 
       logoutBtn.addEventListener("click", () => {
         localStorage.removeItem(tokenKey);
@@ -254,8 +401,10 @@
           }
         }
         setBlogMode(null);
+        setProjectMode(null);
         console.log("Loading blogs...");
         await loadBlogs();
+        await loadProjects();
         await loadRequests();
         console.log("Initial load complete");
       };

@@ -261,4 +261,77 @@ if (requestForm) {
   });
 }
 
+const projectGrid = document.querySelector("[data-projects]");
+if (projectGrid) {
+  const visibility = projectGrid.dataset.projects || "public";
+  const renderProjects = (projects) => {
+    projectGrid.innerHTML = "";
+    if (!projects.length) {
+      const empty = document.createElement("p");
+      empty.className = "helper";
+      empty.textContent = "No projects are published here yet.";
+      projectGrid.appendChild(empty);
+      return;
+    }
+
+    projects.forEach((project, index) => {
+      const card = document.createElement("article");
+      card.className = "blog-block fade-up";
+      card.style.animationDelay = `${index * 0.1}s`;
+
+      const title = document.createElement("h3");
+      const meta = document.createElement("div");
+      const description = document.createElement("p");
+      const actions = document.createElement("div");
+
+      title.textContent = project.title;
+      meta.className = "blog-meta";
+      meta.textContent = `${project.kind} • ${project.status}`;
+      description.textContent = project.description || "Project details coming soon.";
+      actions.className = "action-row";
+
+      if (project.clientHtml) {
+        const playLink = document.createElement("a");
+        playLink.className = "primary-btn";
+        playLink.href = `play/${project.id}`;
+        playLink.textContent = "Open";
+        actions.appendChild(playLink);
+      }
+
+      if (project.link) {
+        const externalLink = document.createElement("a");
+        externalLink.className = "ghost-btn";
+        externalLink.href = project.link;
+        externalLink.target = "_blank";
+        externalLink.rel = "noopener noreferrer";
+        externalLink.textContent = "Visit";
+        actions.appendChild(externalLink);
+      }
+
+      card.append(title, meta, description, actions);
+      projectGrid.appendChild(card);
+    });
+
+    projectGrid.querySelectorAll(".fade-up").forEach((el) => {
+      el.classList.add("in-view");
+    });
+  };
+
+  const loadProjects = async () => {
+    try {
+      const response = await fetch(
+        `${getApiBase()}/api/projects?visibility=${encodeURIComponent(visibility)}`
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load projects.");
+      }
+      renderProjects(await response.json());
+    } catch (error) {
+      projectGrid.innerHTML = "<p>Could not load projects. Please try again later.</p>";
+    }
+  };
+
+  loadProjects();
+}
+
 export { getApiBase };
