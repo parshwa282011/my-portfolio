@@ -135,11 +135,10 @@
       let requestCache = [];
 
       const getToken = () => localStorage.getItem(tokenKey);
-      const serverUrl = "https://my-portfolio-gmh1.onrender.com";
       const apiBase =
         window.location.protocol === "file:"
           ? "http://localhost:3000"
-          : serverUrl;
+          : window.location.origin;
       const authTtlMs = 10 * 60 * 1000;
 
       const request = (path, options = {}) => {
