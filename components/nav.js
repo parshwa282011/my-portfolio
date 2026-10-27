@@ -1,13 +1,25 @@
+import { SERVERLESS } from "../assets/js/config.js";
+
 export function renderNav(activePath) {
-  const links = [
-    { href: "about.html", label: "About" },
-    { href: "blog.html", label: "Blog" },
-    { href: "projects.html", label: "Passion Projects" },
-    { href: "requests.html", label: "Custom Pages" },
-    { href: "socials.html", label: "Ways to Connect" },
-    { href: "activities.html", label: "Activities" },
-  ];
+  const links = SERVERLESS
+    ? [
+        { href: "about.html", label: "About" },
+        { href: "blog.html", label: "Blog" },
+        { href: "projects.html", label: "Passion Projects" },
+        { href: "achievements.html", label: "Achievements" },
+        { href: "socials.html", label: "Ways to Connect" },
+      ]
+    : [
+        { href: "about.html", label: "About" },
+        { href: "blog.html", label: "Blog" },
+        { href: "projects.html", label: "Passion Projects" },
+        { href: "requests.html", label: "Custom Pages" },
+        { href: "socials.html", label: "Ways to Connect" },
+        { href: "activities.html", label: "Activities" },
+      ];
+  // Secret/admin links all lead to server-backed pages.
   const isUnlocked =
+    !SERVERLESS &&
     typeof window !== "undefined" &&
     sessionStorage.getItem("easterEggUnlocked") === "true";
   if (isUnlocked) {
@@ -15,7 +27,9 @@ export function renderNav(activePath) {
     links.push({ href: "login.html", label: "Admin Portal", secret: true });
   }
   const hasToken =
-    typeof window !== "undefined" && localStorage.getItem("adminToken");
+    !SERVERLESS &&
+    typeof window !== "undefined" &&
+    localStorage.getItem("adminToken");
   if (hasToken) {
     links.push({ href: "admin.html", label: "Dashboard" });
   }

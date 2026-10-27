@@ -1,5 +1,6 @@
 import { renderNav } from "../../components/nav.js";
 import { renderFooter } from "../../components/footer.js";
+import { SERVERLESS, SERVER_ONLY_PAGES } from "./config.js";
 
 const root = document.querySelector("[data-page]");
 const getApiBase = () => {
@@ -8,6 +9,15 @@ const getApiBase = () => {
   }
   return window.location.origin;
 };
+
+if (
+  SERVERLESS &&
+  SERVER_ONLY_PAGES.has(
+    document.querySelector("[data-page]")?.getAttribute("data-page")
+  )
+) {
+  window.location.replace("about.html");
+}
 
 const savedTheme = localStorage.getItem("siteTheme");
 const prefersDark =
@@ -210,7 +220,9 @@ if (blogContainer) {
 
   const loadPosts = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/blog`);
+      const response = await fetch(
+        SERVERLESS ? "data/blog.json" : `${API_BASE}/api/blog`
+      );
       if (!response.ok) {
         throw new Error("Failed to load blog posts.");
       }
@@ -226,7 +238,7 @@ if (blogContainer) {
 }
 
 const requestForm = document.querySelector("[data-custom-request-form]");
-if (requestForm) {
+if (requestForm && !SERVERLESS) {
   const status = document.querySelector("[data-request-status]");
   const setStatus = (message, type = "") => {
     if (!status) return;
@@ -290,7 +302,7 @@ if (projectGrid) {
       description.textContent = project.description || "Project details coming soon.";
       actions.className = "action-row";
 
-      if (project.clientHtml) {
+      if (project.clientHtml && !SERVERLESS) {
         const playLink = document.createElement("a");
         playLink.className = "primary-btn";
         playLink.href = `play/${project.id}`;
@@ -320,18 +332,72 @@ if (projectGrid) {
   const loadProjects = async () => {
     try {
       const response = await fetch(
-        `${getApiBase()}/api/projects?visibility=${encodeURIComponent(visibility)}`
+        SERVERLESS
+          ? "data/projects.json"
+          : `${getApiBase()}/api/projects?visibility=${encodeURIComponent(visibility)}`
       );
       if (!response.ok) {
         throw new Error("Failed to load projects.");
       }
-      renderProjects(await response.json());
+      const projects = await response.json();
+      renderProjects(
+        SERVERLESS
+          ? projects.filter((p) => (p.visibility || "public") === visibility)
+          : projects
+      );
     } catch (error) {
       projectGrid.innerHTML = "<p>Could not load projects. Please try again later.</p>";
     }
   };
 
   loadProjects();
+}
+
+const achievementsList = document.querySelector("[data-achievements]");
+if (achievementsList) {
+  const renderAchievements = (items) => {
+    achievementsList.innerHTML = "";
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "helper";
+      empty.textContent = "Achievements coming soon.";
+      achievementsList.appendChild(empty);
+      return;
+    }
+
+    items.forEach((item, index) => {
+      const card = document.createElement("article");
+      card.className = "blog-block fade-up";
+      card.style.animationDelay = `${index * 0.1}s`;
+
+      const title = document.createElement("h3");
+      const meta = document.createElement("div");
+      const description = document.createElement("p");
+
+      title.textContent = item.title;
+      meta.className = "blog-meta";
+      meta.textContent = [item.date, item.event].filter(Boolean).join(" • ");
+      description.textContent = item.description || "";
+
+      card.append(title, meta, description);
+      achievementsList.appendChild(card);
+    });
+
+    achievementsList.querySelectorAll(".fade-up").forEach((el) => {
+      el.classList.add("in-view");
+    });
+  };
+
+  fetch("data/achievements.json")
+    .then((response) => {
+      if (!response.ok) throw new Error("Failed to load achievements.");
+      return response.json();
+    })
+    .then(renderAchievements)
+    .catch(() => {
+      achievementsList.innerHTML =
+        "<p>Could not load achievements. Please try again later.</p>";
+    });
 }
 
 export { getApiBase };
