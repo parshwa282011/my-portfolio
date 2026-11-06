@@ -1,44 +1,15 @@
-import { SERVERLESS } from "../assets/js/config.js";
-
 export function renderNav(activePath) {
-  const links = SERVERLESS
-    ? [
-        { href: "about.html", label: "About" },
-        { href: "blog.html", label: "Blog" },
-        { href: "projects.html", label: "Passion Projects" },
-        { href: "achievements.html", label: "Achievements" },
-        { href: "socials.html", label: "Ways to Connect" },
-      ]
-    : [
-        { href: "about.html", label: "About" },
-        { href: "blog.html", label: "Blog" },
-        { href: "projects.html", label: "Passion Projects" },
-        { href: "requests.html", label: "Custom Pages" },
-        { href: "socials.html", label: "Ways to Connect" },
-        { href: "activities.html", label: "Activities" },
-      ];
-  // Secret/admin links all lead to server-backed pages.
-  const isUnlocked =
-    !SERVERLESS &&
-    typeof window !== "undefined" &&
-    sessionStorage.getItem("easterEggUnlocked") === "true";
-  if (isUnlocked) {
-    links.push({ href: "secret.html", label: "Cool Projects", secret: true });
-    links.push({ href: "login.html", label: "Admin Portal", secret: true });
-  }
-  const hasToken =
-    !SERVERLESS &&
-    typeof window !== "undefined" &&
-    localStorage.getItem("adminToken");
-  if (hasToken) {
-    links.push({ href: "admin.html", label: "Dashboard" });
-  }
+  const links = [
+    { href: "about.html", label: "About" },
+    { href: "blog.html", label: "Blog" },
+    { href: "projects.html", label: "Projects" },
+    { href: "achievements.html", label: "Achievements" },
+    { href: "activities.html", label: "Activities" },
+    { href: "socials.html", label: "Ways to Connect" },
+  ];
 
   const nav = document.createElement("nav");
   nav.className = "nav";
-  if (isUnlocked) {
-    nav.classList.add("nav-unlocked");
-  }
 
   const brand = document.createElement("div");
   brand.className = "nav-brand";
@@ -58,9 +29,6 @@ export function renderNav(activePath) {
     const anchor = document.createElement("a");
     anchor.href = link.href;
     anchor.textContent = link.label;
-    if (link.secret) {
-      anchor.classList.add("nav-secret");
-    }
     if (activePath && activePath.endsWith(link.href)) {
       anchor.classList.add("active");
     }

@@ -1,24 +1,7 @@
 import { renderNav } from "../../components/nav.js";
 import { renderFooter } from "../../components/footer.js";
-import { SERVERLESS, SERVER_ONLY_PAGES } from "./config.js";
 
 const root = document.querySelector("[data-page]");
-const getApiBase = () => {
-  if (window.location.protocol === "file:") {
-    return "http://localhost:3000";
-  }
-  return window.location.origin;
-};
-
-if (
-  SERVERLESS &&
-  SERVER_ONLY_PAGES.has(
-    document.querySelector("[data-page]")?.getAttribute("data-page")
-  )
-) {
-  window.location.replace("about.html");
-}
-
 const savedTheme = localStorage.getItem("siteTheme");
 const prefersDark =
   window.matchMedia &&
@@ -26,13 +9,6 @@ const prefersDark =
 const initialTheme = savedTheme || (prefersDark ? "dark" : "light");
 document.documentElement.dataset.theme = initialTheme;
 
-const restrictedPages = new Set(["secret", "login", "admin"]);
-if (root) {
-  const pageName = root.getAttribute("data-page");
-  if (!restrictedPages.has(pageName)) {
-    sessionStorage.removeItem("easterEggUnlocked");
-  }
-}
 const mountNav = () => {
   if (!root) return;
   const nav = renderNav(window.location.pathname);
@@ -91,41 +67,6 @@ if (root) {
   root.appendChild(footer);
 }
 
-const konami = [
-  "ArrowUp",
-  "ArrowUp",
-  "ArrowDown",
-  "ArrowDown",
-  "ArrowLeft",
-  "ArrowRight",
-  "ArrowLeft",
-  "ArrowRight",
-  "b",
-  "a",
-];
-let konamiIndex = 0;
-document.addEventListener("keydown", (event) => {
-  const target = event.target;
-  const isInput =
-    target instanceof HTMLElement &&
-    (target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.isContentEditable);
-  if (isInput) return;
-
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  if (key === konami[konamiIndex]) {
-    konamiIndex += 1;
-    if (konamiIndex === konami.length) {
-      sessionStorage.setItem("easterEggUnlocked", "true");
-      mountNav();
-      konamiIndex = 0;
-    }
-  } else {
-    konamiIndex = 0;
-  }
-});
-
 const animated = document.querySelectorAll(".fade-up");
 if (animated.length) {
   const observer = new IntersectionObserver(
@@ -179,7 +120,6 @@ const openOverlay = (html) => {
 
 const blogContainer = document.querySelector("[data-blog]");
 if (blogContainer) {
-  const API_BASE = getApiBase();
   const renderPosts = (posts) => {
     blogContainer.innerHTML = "";
     posts.forEach((post, index) => {
@@ -220,9 +160,7 @@ if (blogContainer) {
 
   const loadPosts = async () => {
     try {
-      const response = await fetch(
-        SERVERLESS ? "data/blog.json" : `${API_BASE}/api/blog`
-      );
+      const response = await fetch("data/blog.json");
       if (!response.ok) {
         throw new Error("Failed to load blog posts.");
       }
@@ -237,52 +175,19 @@ if (blogContainer) {
   loadPosts();
 }
 
-const requestForm = document.querySelector("[data-custom-request-form]");
-if (requestForm && !SERVERLESS) {
-  const status = document.querySelector("[data-request-status]");
-  const setStatus = (message, type = "") => {
-    if (!status) return;
-    status.textContent = message;
-    status.dataset.status = type;
-  };
-
-  requestForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    setStatus("Sending request...");
-
-    const formData = new FormData(requestForm);
-    const payload = Object.fromEntries(formData.entries());
-
-    try {
-      const response = await fetch(`${getApiBase()}/api/custom-requests`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || "Could not send request.");
-      }
-
-      requestForm.reset();
-      setStatus("Request sent. I will review it soon.", "success");
-    } catch (error) {
-      setStatus(error.message, "error");
-    }
-  });
-}
-
-const projectGrid = document.querySelector("[data-projects]");
-if (projectGrid) {
-  const visibility = projectGrid.dataset.projects || "public";
-  const renderProjects = (projects) => {
-    projectGrid.innerHTML = "";
+// projects.html has one grid per category (data-projects="passion" | "mini").
+// Every project comes from data/projects.json:
+//   { title, category, kind, status, description, link?, path? }
+//   link -> external URL, path -> page hosted in this repo (e.g. mini-proj/<name>/)
+const projectGrids = document.querySelectorAll("[data-projects]");
+if (projectGrids.length) {
+  const renderProjects = (grid, projects) => {
+    grid.innerHTML = "";
     if (!projects.length) {
       const empty = document.createElement("p");
       empty.className = "helper";
-      empty.textContent = "No projects are published here yet.";
-      projectGrid.appendChild(empty);
+      empty.textContent = "Nothing here yet. Check back soon.";
+      grid.appendChild(empty);
       return;
     }
 
@@ -298,16 +203,16 @@ if (projectGrid) {
 
       title.textContent = project.title;
       meta.className = "blog-meta";
-      meta.textContent = `${project.kind} • ${project.status}`;
+      meta.textContent = [project.kind, project.status].filter(Boolean).join(" • ");
       description.textContent = project.description || "Project details coming soon.";
       actions.className = "action-row";
 
-      if (project.clientHtml && !SERVERLESS) {
-        const playLink = document.createElement("a");
-        playLink.className = "primary-btn";
-        playLink.href = `play/${project.id}`;
-        playLink.textContent = "Open";
-        actions.appendChild(playLink);
+      if (project.path) {
+        const openLink = document.createElement("a");
+        openLink.className = "primary-btn";
+        openLink.href = project.path;
+        openLink.textContent = "Open";
+        actions.appendChild(openLink);
       }
 
       if (project.link) {
@@ -320,37 +225,35 @@ if (projectGrid) {
         actions.appendChild(externalLink);
       }
 
-      card.append(title, meta, description, actions);
-      projectGrid.appendChild(card);
+      card.append(title, meta, description);
+      if (actions.children.length) card.appendChild(actions);
+      grid.appendChild(card);
     });
 
-    projectGrid.querySelectorAll(".fade-up").forEach((el) => {
+    grid.querySelectorAll(".fade-up").forEach((el) => {
       el.classList.add("in-view");
     });
   };
 
-  const loadProjects = async () => {
-    try {
-      const response = await fetch(
-        SERVERLESS
-          ? "data/projects.json"
-          : `${getApiBase()}/api/projects?visibility=${encodeURIComponent(visibility)}`
-      );
-      if (!response.ok) {
-        throw new Error("Failed to load projects.");
-      }
-      const projects = await response.json();
-      renderProjects(
-        SERVERLESS
-          ? projects.filter((p) => (p.visibility || "public") === visibility)
-          : projects
-      );
-    } catch (error) {
-      projectGrid.innerHTML = "<p>Could not load projects. Please try again later.</p>";
-    }
-  };
-
-  loadProjects();
+  fetch("data/projects.json")
+    .then((response) => {
+      if (!response.ok) throw new Error("Failed to load projects.");
+      return response.json();
+    })
+    .then((projects) => {
+      projectGrids.forEach((grid) => {
+        const category = grid.dataset.projects;
+        renderProjects(
+          grid,
+          projects.filter((p) => (p.category || "passion") === category)
+        );
+      });
+    })
+    .catch(() => {
+      projectGrids.forEach((grid) => {
+        grid.innerHTML = "<p>Could not load projects. Please try again later.</p>";
+      });
+    });
 }
 
 const achievementsList = document.querySelector("[data-achievements]");
@@ -399,5 +302,3 @@ if (achievementsList) {
         "<p>Could not load achievements. Please try again later.</p>";
     });
 }
-
-export { getApiBase };

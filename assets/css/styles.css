@@ -188,18 +188,6 @@ img {
   background: rgba(37, 99, 235, 0.08);
 }
 
-.nav-secret {
-  display: none;
-}
-
-.nav-open .nav-links .nav-secret {
-  display: inline-flex;
-}
-
-.nav-unlocked .nav-toggle {
-  display: inline-flex;
-}
-
 .hero {
   display: grid;
   gap: 24px;
@@ -398,35 +386,6 @@ img {
   border: 1px dashed rgba(15, 23, 42, 0.2);
 }
 
-.form-stack {
-  display: grid;
-  gap: 12px;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-
-.form-stack label {
-  display: grid;
-  gap: 6px;
-  font-size: 0.9rem;
-  color: var(--text-2);
-}
-
-.form-stack input,
-.form-stack textarea,
-.form-stack select {
-  border-radius: 12px;
-  border: 1px solid var(--card-border);
-  padding: 10px 12px;
-  font: inherit;
-  background: var(--field-bg);
-  color: var(--text-1);
-}
-
 .primary-btn {
   border-radius: 999px;
   border: none;
@@ -450,27 +409,6 @@ img {
   background: transparent;
   color: var(--text-1);
   cursor: pointer;
-}
-
-.list-stack {
-  margin-top: 16px;
-  display: grid;
-  gap: 12px;
-}
-
-.list-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  background: rgba(255, 255, 255, 0.7);
-}
-
-.list-row .meta {
-  font-size: 0.85rem;
-  color: var(--text-2);
 }
 
 .helper {
