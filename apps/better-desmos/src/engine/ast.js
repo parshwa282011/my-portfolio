@@ -28,7 +28,7 @@ export const BUILTIN_FUNCS = new Set([
   "Arsinh", "Arcosh", "Artanh", "Arcsinh", "Arccosh", "Arctanh",
   "Exp", "Ln", "Log", "Lb", "Lg", "Abs", "Floor", "Ceil", "Round", "Sign",
   "Max", "Min", "Mod", "Gamma", "Factorial", "Erf", "Square",
-  "$Sum", "$Prod", "$Int", "$Lim", "$Vec", "D", "Tuple", "List", "Equal", "Less",
+  "$Sum", "$Prod", "$Int", "$Lim", "$Vec", "$Nabla", "D", "Tuple", "List", "Equal", "Less",
   "LessEqual", "Greater", "GreaterEqual",
 ]);
 
@@ -161,4 +161,4 @@ export const hasHead = (a, names) => {
   return false;
 };
 
-export const CALCULUS = new Set(["D", "$Int", "$Lim", "$Sum", "$Prod"]);
+export const CALCULUS = new Set(["D", "$Int", "$Lim", "$Sum", "$Prod", "$Nabla"]);

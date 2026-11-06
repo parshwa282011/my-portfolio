@@ -158,6 +158,42 @@ describe("3D geometry", () => {
   });
 });
 
+describe("∇ notation", () => {
+  const rows = (mode, ...latex) => {
+    const out = analyze(latex.map((l, i) => ({ id: `r${i}`, latex: l })), { mode, P: {} });
+    return latex.map((_, i) => out.results.get(`r${i}`));
+  };
+  it("∇f(x,y,z) with f defined gives the gradient field", () => {
+    const [, g] = rows("3d", "f(x,y,z)=x^2yz", "\\nabla f\\left(x,y,z\\right)");
+    expect(g.kind).toBe("field");
+    expect(toLatex(g.exact)).toBe("\\left\\langle 2xyz,x^{2}z,x^{2}y\\right\\rangle");
+    expect([g.fx(1, 2, 3), g.fy(1, 2, 3), g.fz(1, 2, 3)]).toEqual([12, 3, 2]);
+  });
+  it("a bare function name works, and the minus sign flips it", () => {
+    const [, a, b] = rows("2d", "g(x,y)=-2x^2-y^2", "\\nabla g", "-\\nabla g");
+    expect([a.fx(1, 1), a.fy(1, 1)]).toEqual([-4, -2]);
+    expect([b.fx(1, 1), b.fy(1, 1)]).toEqual([4, 2]);
+  });
+  it("divergence, curl and the Laplacian", () => {
+    const [, div, curl3, lap] = rows("3d", "f(x,y,z)=x^2yz", "\\nabla\\cdot\\left\\langle x,y,z\\right\\rangle", "\\nabla\\times\\left\\langle -y,x,0\\right\\rangle", "\\nabla^2 f");
+    expect(div.value()).toBe(3);
+    expect(curl3.kind).toBe("field");
+    expect(toLatex(curl3.exact)).toBe("\\left\\langle 0,0,2\\right\\rangle");
+    expect(toLatex(lap.exact)).toBe("2yz");
+    expect(lap.status).toBe("ok");
+  });
+  it("∇·∇f is the Laplacian", () => {
+    const [, a] = rows("3d", "f(x,y,z)=x^2yz", "\\nabla\\cdot\\nabla f");
+    expect(toLatex(a.exact)).toBe("2yz");
+  });
+  it("an undefined function is reported, not silently multiplied", () => {
+    const [r] = rows("3d", "\\nabla h\\left(x,y,z\\right)");
+    expect(r.status).toBe("error");
+    expect(r.error).toMatch(/not defined/);
+  });
+  it("a lone ∇ explains itself", () => expect(rows("2d", "\\nabla")[0].error).toMatch(/needs something/));
+});
+
 describe("non-cubic boxes", () => {
   const box = { x: [0, 10], y: [-5, 5], z: [2, 6] };
   it("surfaces cover exactly the box", () => {

@@ -9,7 +9,7 @@ import { CALCULUS, CONSTANTS, BUILTIN_FUNCS, freeSymbols, hasHead, isArr, isSym 
 import { parseLatex } from "./parse.js";
 import { inline } from "./inline.js";
 import { compileAst, CompileError } from "./codegen.js";
-import { expandDerivs } from "./vector.js";
+import { expandDerivs, expandNabla, hasNabla } from "./vector.js";
 import { simplify } from "./simplify.js";
 
 export const RESERVED = new Set(["x", "y", "r", "theta", "t"]);
@@ -95,8 +95,16 @@ export function analyze(rows, { angle = "rad", P = {}, mode = "2d" } = {}) {
     }
     deps = new Set();
     try {
+      if (hasNabla(item.ast)) {
+        item.ast = expandNabla(item.ast, ctx); // ∇f, ∇·F, ∇×F, ∇²f
+        item.nabla = true;
+      }
       const res = mode === "3d" ? classify3(item, ctx, build, row) : classify(item, ctx, build, row);
       res.deps = [...deps];
+      if (item.nabla) {
+        res.calc = true;
+        res.exact = item.ast;
+      }
       attachExact(res, item, ctx);
       results.set(id, res);
     } catch (e) {
@@ -363,7 +371,18 @@ function classify3(item, ctx, build, row) {
   }
 
   // bare expression
-  if (hasS("z")) throw new Error("Write this as an equation, like z = …  or  F(x,y,z) = 0");
+  if (hasS("z")) {
+    // a scalar field f(x,y,z): nothing to draw by itself, but it can be differentiated,
+    // and f = c draws a level surface
+    const b = build(ast, ["x", "y", "z"]);
+    return {
+      ...base,
+      kind: "multivar",
+      symAst: b.ast,
+      scalarAst: b.ast,
+      hint: "A function of x, y and z. Set it equal to a number (f = 1) to draw that level surface, or use ∇f.",
+    };
+  }
   if (hasS("x") || hasS("y")) {
     const b = build(ast, ["x", "y"]);
     return { ...base, kind: "surface", axis: "z", args: ["x", "y"], fn: b.fn, symAst: b.ast, scalarAst: b.ast };

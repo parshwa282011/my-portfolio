@@ -54,6 +54,7 @@ const INSERTS = [
   ["π", "\\pi", "Pi"],
   ["θ", "\\theta", "Theta"],
   ["(x,y)", "\\left(#?,#?\\right)", "Point"],
+  ["∇", "\\nabla #?", "Gradient ∇f(x,y,z), divergence ∇·F, curl ∇×F, Laplacian ∇²f"],
   ["⟨ ⟩", (mode) => (mode === "3d" ? "\\left\\langle #?,#?,#?\\right\\rangle" : "\\left\\langle #?,#?\\right\\rangle"), "Vector field  ⟨P, Q⟩ — drawn as arrows"],
 ];
 
@@ -576,7 +577,9 @@ export function startApp(root) {
     try {
       let list;
       if (op === "grad") {
-        const vars = doc.mode === "3d" && res.kind === "implicit3" ? ["x", "y", "z"] : ["x", "y"];
+        const syms = new Set();
+        collectSymbols(res.scalarAst, syms);
+        const vars = doc.mode === "3d" && (res.kind === "implicit3" || syms.has("z")) ? ["x", "y", "z"] : ["x", "y"];
         const g = gradient(res.scalarAst, vars);
         list = [{ label: "∇f", latex: toLatex(["$Vec", ...g]), add: { text: "Add as field", title: "Add as a new vector field", latex: toLatex(["$Vec", ...g]) } }];
       } else if (op === "div") {
