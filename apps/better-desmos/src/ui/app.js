@@ -13,7 +13,7 @@ import {
   exportJSON,
   importJSON,
 } from "../state/doc.js";
-import { initTheme, setTheme, currentTheme } from "./theme.js";
+import { initTheme, setTheme, currentTheme, applyMathTheme } from "./theme.js";
 
 MathfieldElement.fontsDirectory = null;
 MathfieldElement.soundsDirectory = null;
@@ -185,6 +185,7 @@ export function startApp(root) {
     const handle = el("span", { className: "handle", title: "Drag to reorder", textContent: "⋮⋮" });
     const mf = new MathfieldElement();
     mf.className = "mf";
+    applyMathTheme(mf);
     mf.value = row.latex;
     mf.mathVirtualKeyboardPolicy = "auto";
     mf.setAttribute("aria-label", "Expression");
@@ -523,6 +524,7 @@ export function startApp(root) {
         const mf = new MathfieldElement();
         mf.readOnly = true;
         mf.className = "mf result-mf";
+        applyMathTheme(mf);
         mf.value = out.op === "solve" ? `${out.prefix}${latex}` : `=${latex}`;
         nodes.push(mf);
         if (canPlot(out, latex)) {
@@ -776,5 +778,9 @@ export function startApp(root) {
   renderRows();
   refresh();
   window.addEventListener("pagehide", persist);
-  document.addEventListener("themechange", () => graph.invalidate());
+  document.addEventListener("themechange", () => {
+    applyMathTheme();
+    graph.invalidate();
+  });
+  applyMathTheme();
 }

@@ -14,6 +14,14 @@
   --field: rgba(255, 255, 255, 0.95);
   --shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
   --radius: 14px;
+  --row-line: rgba(15, 23, 42, 0.2);
+  --row-hover: rgba(15, 23, 42, 0.035);
+
+  /* MathLive menus / virtual keyboard */
+  --menu-bg-c: #ffffff;
+  --menu-text-c: #0f172a;
+  --kb-bg: #e8edf5;
+  --kb-border: rgba(15, 23, 42, 0.15);
 
   --graph-bg: #ffffff;
   --graph-grid: #d9e0ea;
@@ -37,12 +45,27 @@
   --ok: #86efac;
   --field: rgba(15, 23, 42, 0.9);
   --shadow: 0 18px 44px rgba(0, 0, 0, 0.35);
+  --row-line: rgba(226, 232, 240, 0.28);
+  --row-hover: rgba(226, 232, 240, 0.05);
+
+  --menu-bg-c: #1e293b;
+  --menu-text-c: #f1f5f9;
+  --kb-bg: #172033;
+  --kb-border: rgba(226, 232, 240, 0.2);
 
   --graph-bg: #0b1220;
   --graph-grid: #223049;
   --graph-grid-minor: #162135;
   --graph-axis: #cbd5e1;
   --graph-text: #94a3b8;
+}
+
+body[theme] {
+  --keyboard-background: var(--kb-bg);
+  --keyboard-border: var(--kb-border);
+  --keyboard-toolbar-background: var(--kb-bg);
+  --keyboard-toolbar-text: var(--text-1);
+  --keyboard-accent-color: var(--accent);
 }
 
 * {
@@ -179,15 +202,22 @@ button {
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
+  border-top: 1px solid var(--row-line);
 }
 
 .row {
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 8px;
-  padding: 10px 10px 10px 6px;
-  border-bottom: 1px solid var(--line);
+  padding: 12px 10px 12px 6px;
+  border-bottom: 1px solid var(--row-line);
+  border-left: 3px solid transparent;
   align-items: start;
+  transition: background 0.12s;
+}
+
+.row:hover {
+  background: var(--row-hover);
 }
 
 .row.dragging {
@@ -196,6 +226,7 @@ button {
 
 .row:focus-within {
   background: var(--accent-soft);
+  border-left-color: var(--accent);
 }
 
 .row {
@@ -264,15 +295,41 @@ button {
 
 math-field.mf {
   display: block;
-  min-height: 2rem;
+  min-height: 2.2rem;
   width: 100%;
+  padding: 2px 0;
   font-size: 1.25rem;
   border: none;
   background: transparent;
   color: var(--text-1);
   outline: none;
   --selection-background-color: var(--accent-soft);
+  --selection-color: var(--text-1);
   --caret-color: var(--accent);
+  --contains-highlight-background-color: var(--accent-soft);
+  --placeholder-color: var(--text-2);
+  --text-color: var(--text-1);
+  --smart-fence-color: var(--text-1);
+  --ui-text: var(--text-1);
+  --ui-text-muted: var(--text-2);
+  --ui-border-color: var(--line);
+  --ui-field-bg: transparent;
+  --ui-field-bg-hover: transparent;
+  --ui-field-bg-focus: transparent;
+  --ui-field-border: transparent;
+  --ui-field-border-hover: transparent;
+  --ui-field-border-focus: transparent;
+  --ui-menu-bg: var(--menu-bg-c);
+  --ui-menu-text: var(--menu-text-c);
+  --ui-menu-bg-hover: var(--accent-soft);
+  --ui-menu-bg-active: var(--accent);
+  --ui-menu-text-active: #fff;
+  --ui-menu-divider: var(--line);
+}
+
+/* keyboard toggle glyph follows the theme */
+math-field.mf::part(virtual-keyboard-toggle) {
+  color: var(--accent);
 }
 
 math-field.mf::part(menu-toggle) {

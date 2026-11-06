@@ -25,3 +25,12 @@ export function initTheme() {
   const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   document.documentElement.dataset.theme = saved === "dark" || saved === "light" ? saved : prefersDark ? "dark" : "light";
 }
+
+// MathLive themes its menus, keyboard and fields from a `theme` attribute (or the
+// OS preference). Mirror the site theme onto it so they never disagree.
+export function applyMathTheme(...fields) {
+  const t = currentTheme();
+  document.body?.setAttribute("theme", t);
+  const list = fields.length ? fields : document.querySelectorAll("math-field");
+  for (const f of list) f.setAttribute("theme", t);
+}
