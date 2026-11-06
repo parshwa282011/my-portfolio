@@ -2,29 +2,29 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Better Desmos • Parshwa</title>
-    <link rel="stylesheet" href="../../assets/css/styles.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Cpath d='M4 22 Q10 4 16 16 T28 10' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <meta name="description" content="A graphing calculator with sliders, implicit curves, calculus and an exact symbolic engine." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <script defer src="../../assets/js/main.js" type="module"></script>
+    <script>
+      // Apply the saved theme before first paint (same key as the portfolio).
+      try {
+        var t = localStorage.getItem("siteTheme");
+        if (t !== "dark" && t !== "light") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="./assets/index-C1oky-ep.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Cbs9QDe1.css">
   </head>
   <body>
-    <main class="container" data-page="better-desmos">
-      <section class="hero fade-up">
-        <div class="hero-content">
-          <span class="badge">Mini Project • Not Started</span>
-          <h1>Better Desmos</h1>
-          <p>
-            This project hasn't been started yet. Check back later, or head
-            back to <a href="../../projects.html">all projects</a>.
-          </p>
-        </div>
-      </section>
-    </main>
+    <div id="app" class="app"></div>
+    <noscript>Better Desmos needs JavaScript.</noscript>
   </body>
 </html>

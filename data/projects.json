@@ -11,8 +11,8 @@
     "title": "Better Desmos",
     "category": "mini",
     "kind": "Web App",
-    "status": "Not Started",
-    "description": "An idea for a graphing calculator in the spirit of Desmos, with my own take on features and usability. Planning stage only for now.",
+    "status": "In Development",
+    "description": "A single-page graphing calculator: type math like on paper, drag sliders, plot explicit, implicit, parametric and polar curves and inequalities, and get exact derivatives, integrals and limits. 3D, 4D and vector fields are planned.",
     "path": "mini-proj/better-desmos/"
   }
 ]

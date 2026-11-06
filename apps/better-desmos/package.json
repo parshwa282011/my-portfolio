@@ -1,0 +1,21 @@
+{
+  "name": "better-desmos",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "@cortex-js/compute-engine": "^0.181.1",
+    "lz-string": "^1.5.0",
+    "mathlive": "^0.111.4"
+  }
+}
