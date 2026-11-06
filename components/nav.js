@@ -27,7 +27,8 @@ export function renderNav(activePath) {
 
   links.forEach((link) => {
     const anchor = document.createElement("a");
-    anchor.href = link.href;
+    // Resolve from this file so links also work from subfolders (mini-proj/...).
+    anchor.href = new URL(`../${link.href}`, import.meta.url).href;
     anchor.textContent = link.label;
     if (activePath && activePath.endsWith(link.href)) {
       anchor.classList.add("active");

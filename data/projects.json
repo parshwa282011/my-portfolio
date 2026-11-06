@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "title": "Game",
+    "category": "mini",
+    "kind": "Web Game",
+    "status": "In Development",
+    "description": "A browser-based game I'm building and hosting on its own subdomain. Still a work in progress, so expect rough edges and frequent changes.",
+    "link": "https://game.parshwa.blog"
+  },
+  {
+    "title": "Better Desmos",
+    "category": "mini",
+    "kind": "Web App",
+    "status": "Not Started",
+    "description": "An idea for a graphing calculator in the spirit of Desmos, with my own take on features and usability. Planning stage only for now.",
+    "path": "mini-proj/better-desmos/"
+  }
+]
