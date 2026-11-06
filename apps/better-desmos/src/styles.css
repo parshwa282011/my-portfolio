@@ -890,3 +890,27 @@ dialog.settings {
   max-height: 92dvh;
   overflow-y: auto;
 }
+
+.box-grid {
+  display: grid;
+  grid-template-columns: 1.6em 1fr 1fr;
+  gap: 6px 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.box-grid .hd {
+  font-size: 0.72rem;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.box-grid .ax {
+  font-style: italic;
+  margin: 0;
+}
+
+.box-grid .num {
+  width: 100%;
+}

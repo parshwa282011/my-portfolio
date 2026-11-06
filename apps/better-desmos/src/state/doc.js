@@ -16,12 +16,12 @@ export const DEFAULT_SETTINGS = {
   grid: true,
   axes: true,
   labels: true,
-  range3: 5, // 3D box is [-range3, range3]^3
+  box: { x: [-5, 5], y: [-5, 5], z: [-5, 5] }, // the 3D window, per axis
   opacity3: 1,
   vf: { step: 1, len: "scaled", mag: true, style: "arrows" },
 };
 
-export const RANGE3_OPTIONS = [2, 3, 5, 10, 20, 50, 100];
+export const BOX_PRESETS = [2, 3, 5, 10, 20, 50, 100]; // ±N on every axis
 export const VF_STEPS = [0.25, 0.5, 1, 2, 5];
 
 // Example rows for each mode. `extra` is merged into the row (hidden, ranges, ...).
@@ -52,7 +52,7 @@ export function defaultDoc() {
   return {
     v: 1,
     mode: "2d",
-    settings: { ...DEFAULT_SETTINGS, vf: { ...DEFAULT_SETTINGS.vf } },
+    settings: cloneSettings(DEFAULT_SETTINGS),
     view: { cx: 0, cy: 0, scale: 50 },
     view3: null, // 3D camera {p:[x,y,z], t:[x,y,z]}
     rows: exampleRows("2d"),
@@ -65,6 +65,13 @@ export function defaultDoc() {
 }
 
 const isNum = (n) => typeof n === "number" && Number.isFinite(n);
+
+function cloneSettings(s) {
+  return { ...s, vf: { ...s.vf }, box: { x: [...s.box.x], y: [...s.box.y], z: [...s.box.z] } };
+}
+
+// A usable axis range: finite, ordered, not absurdly large or thin.
+const goodRange = (r) => Array.isArray(r) && r.length === 2 && r.every(isNum) && r[0] < r[1] && r[1] - r[0] >= 1e-3 && Math.abs(r[0]) <= 1e6 && Math.abs(r[1]) <= 1e6;
 const VF_LEN = new Set(["scaled", "unit"]);
 const VF_STYLE = new Set(["arrows", "stream", "both"]);
 
@@ -104,7 +111,7 @@ export function sanitize(raw) {
   const doc = {
     v: 1,
     mode: raw.mode === "3d" ? "3d" : "2d",
-    settings: { ...base.settings, vf: { ...base.settings.vf } },
+    settings: cloneSettings(base.settings),
     view: { ...base.view },
     view3: null,
     rows: [],
@@ -114,7 +121,11 @@ export function sanitize(raw) {
   const s = raw.settings || {};
   if (s.angle === "deg" || s.angle === "rad") doc.settings.angle = s.angle;
   for (const k of ["grid", "axes", "labels"]) if (typeof s[k] === "boolean") doc.settings[k] = s[k];
-  if (isNum(s.range3) && s.range3 >= 0.5 && s.range3 <= 10000) doc.settings.range3 = s.range3;
+  if (isNum(s.range3) && s.range3 >= 0.5 && s.range3 <= 10000) {
+    // older documents: one symmetric range for all three axes
+    doc.settings.box = { x: [-s.range3, s.range3], y: [-s.range3, s.range3], z: [-s.range3, s.range3] };
+  }
+  if (s.box && typeof s.box === "object") for (const k of ["x", "y", "z"]) if (goodRange(s.box[k])) doc.settings.box[k] = [...s.box[k]];
   if (isNum(s.opacity3) && s.opacity3 >= 0.1 && s.opacity3 <= 1) doc.settings.opacity3 = s.opacity3;
   doc.settings.vf = cleanVF(s.vf, doc.settings.vf);
   const v = raw.view || {};

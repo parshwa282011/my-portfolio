@@ -4,7 +4,7 @@ import { parseLatex } from "../src/engine/parse.js";
 import { simplify } from "../src/engine/simplify.js";
 import { toLatex } from "../src/engine/latex.js";
 import { expandDerivs, gradient, divergence, curl } from "../src/engine/vector.js";
-import { heightfield, marchingTets, sampleCurve, sampleField3D, tube } from "../src/render3d/geometry3d.js";
+import { heightfield, marchingTets, sampleCurve, sampleField3D, tube, cubeBox } from "../src/render3d/geometry3d.js";
 import { fieldGrid } from "../src/render2d/field2d.js";
 import { View } from "../src/render2d/viewport.js";
 import { defaultDoc, exampleRows, sanitize } from "../src/state/doc.js";
@@ -118,7 +118,7 @@ describe("3D classification", () => {
 
 describe("3D geometry", () => {
   it("marching tetrahedra: a sphere has the right area and outward winding", () => {
-    const m = marchingTets((x, y, z) => x * x + y * y + z * z - 9, 5, 36);
+    const m = marchingTets((x, y, z) => x * x + y * y + z * z - 9, cubeBox(5), 36);
     const p = m.positions;
     let area = 0;
     let outward = 0;
@@ -134,27 +134,71 @@ describe("3D geometry", () => {
     expect(outward / m.triangles).toBeGreaterThan(0.97);
   });
   it("a surface breaks at an asymptote instead of joining the branches", () => {
-    const full = heightfield((x) => x, "z", 5, 60);
-    const tan = heightfield((x) => Math.tan(x), "z", 5, 60);
+    const full = heightfield((x) => x, "z", cubeBox(5), 60);
+    const tan = heightfield((x) => Math.tan(x), "z", cubeBox(5), 60);
     expect(tan.indices.length).toBeLessThan(full.indices.length);
   });
   it("curves split at undefined points; tubes have the expected size", () => {
-    const parts = sampleCurve((t) => t, (t) => Math.sqrt(t), () => 0, [-1, 1], 5, 200);
+    const parts = sampleCurve((t) => t, (t) => Math.sqrt(t), () => 0, [-1, 1], cubeBox(5), 200);
     expect(parts.length).toBe(1);
     const tb = tube(Float32Array.from(parts[0]), 0.05, 6);
     expect(tb.positions.length / 3).toBe((parts[0].length / 3) * 6);
   });
   it("field sampling follows the requested spacing and caps the count", () => {
     const res = { planar: false, fx: (x, y) => -y, fy: (x) => x, fz: () => 0 };
-    const a = sampleField3D(res, 5, { step: 1, len: "scaled" });
+    const a = sampleField3D(res, cubeBox(5), { step: 1, len: "scaled" });
     expect(a.items.length).toBe(11 ** 3 - 11); // the z axis has zero magnitude
     expect(a.items.every((i) => Number.isInteger(i.x) && Number.isInteger(i.y) && Number.isInteger(i.z))).toBe(true);
-    const b = sampleField3D(res, 5, { step: 0.1, len: "scaled" });
+    const b = sampleField3D(res, cubeBox(5), { step: 0.1, len: "scaled" });
     expect(b.coarsened).toBe(true);
     expect(b.items.length).toBeLessThan(13000);
-    const flat = sampleField3D({ ...res, planar: true }, 5, { step: 1, len: "unit" });
+    const flat = sampleField3D({ ...res, planar: true }, cubeBox(5), { step: 1, len: "unit" });
     expect(flat.items.every((i) => i.z === 0)).toBe(true);
     expect(flat.items[0].len).toBeCloseTo(0.7, 9);
+  });
+});
+
+describe("non-cubic boxes", () => {
+  const box = { x: [0, 10], y: [-5, 5], z: [2, 6] };
+  it("surfaces cover exactly the box", () => {
+    const h = heightfield((x, y) => x + y, "z", box, 40);
+    const p = h.positions;
+    const xs = [];
+    const ys = [];
+    for (let i = 0; i < p.length; i += 3) {
+      xs.push(p[i]);
+      ys.push(p[i + 1]);
+    }
+    expect([Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]).toEqual([0, 10, -5, 5]);
+  });
+  it("implicit surfaces stay inside the box and keep their shape", () => {
+    // sphere centred at (5, 0, 4), radius 2: fits inside 10 × 10 × 4
+    const m = marchingTets((x, y, z) => (x - 5) ** 2 + y * y + (z - 4) ** 2 - 4, box, 40);
+    const p = m.positions;
+    let ok = true;
+    let area = 0;
+    for (let i = 0; i < p.length; i += 3) if (p[i] < 0 || p[i] > 10 || Math.abs(p[i + 1]) > 5 || p[i + 2] < 2 || p[i + 2] > 6) ok = false;
+    for (let i = 0; i < p.length; i += 9) {
+      const u = [p[i + 3] - p[i], p[i + 4] - p[i + 1], p[i + 5] - p[i + 2]];
+      const w = [p[i + 6] - p[i], p[i + 7] - p[i + 1], p[i + 8] - p[i + 2]];
+      area += Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]) / 2;
+    }
+    expect(ok).toBe(true);
+    expect(Math.abs(area - 16 * Math.PI) / (16 * Math.PI)).toBeLessThan(0.04);
+  });
+  it("vector arrows start at the first multiple of the spacing inside each range", () => {
+    const res = { planar: false, fx: () => 1, fy: () => 0, fz: () => 0 };
+    const a = sampleField3D(res, { x: [3, 9], y: [-1, 1], z: [0.5, 2.5] }, { step: 2, len: "scaled" });
+    expect([...new Set(a.items.map((i) => i.x))].sort((p, q) => p - q)).toEqual([4, 6, 8]);
+    expect([...new Set(a.items.map((i) => i.y))].sort((p, q) => p - q)).toEqual([0]);
+    expect([...new Set(a.items.map((i) => i.z))]).toEqual([2]);
+  });
+  it("a planar field disappears when the box does not contain z = 0", () => {
+    const res = { planar: true, fx: () => 1, fy: () => 1, fz: () => 0 };
+    expect(sampleField3D(res, { x: [-2, 2], y: [-2, 2], z: [1, 3] }, { step: 1, len: "scaled" }).items.length).toBe(0);
+  });
+  it("old documents with one range keep working", () => {
+    expect(sanitize({ rows: [{ latex: "x" }], settings: { range3: 8 } }).settings.box).toEqual({ x: [-8, 8], y: [-8, 8], z: [-8, 8] });
   });
 });
 
@@ -164,12 +208,12 @@ describe("document", () => {
     d.mode = "3d";
     d.rows = exampleRows("3d");
     d.stash = { "2d": exampleRows("2d") };
-    d.settings.range3 = 10;
+    d.settings.box = { x: [0, 10], y: [-5, 5], z: [-2, 20] };
     d.settings.vf = { step: 0.5, len: "unit", mag: false, style: "both" };
     const back = sanitize(JSON.parse(JSON.stringify(d)));
     expect(back.mode).toBe("3d");
     expect(back.stash["2d"].length).toBe(6);
-    expect(back.settings.range3).toBe(10);
+    expect(back.settings.box).toEqual({ x: [0, 10], y: [-5, 5], z: [-2, 20] });
     expect(back.settings.vf).toEqual({ step: 0.5, len: "unit", mag: false, style: "both" });
     expect(back.rows.find((r) => r.vf)?.vf.step).toBe(2);
   });
@@ -177,12 +221,12 @@ describe("document", () => {
     const d = sanitize({
       rows: [{ latex: "x", vf: { step: -3, len: "evil", style: 5 }, tmin: "a" }],
       mode: "4d",
-      settings: { range3: 1e12, opacity3: -1, vf: { step: 0 } },
+      settings: { box: { x: [3, 1], y: [0, 1e12], z: [-1, 1] }, opacity3: -1, vf: { step: 0 } },
       view3: { p: [1, 2, "x"], t: [0, 0, 0] },
       stash: { "3d": "nope" },
     });
     expect(d.mode).toBe("2d");
-    expect(d.settings.range3).toBe(5);
+    expect(d.settings.box).toEqual({ x: [-5, 5], y: [-5, 5], z: [-1, 1] }); // bad axes fall back, good ones are kept
     expect(d.settings.opacity3).toBe(1);
     expect(d.settings.vf.step).toBe(1);
     expect(d.view3).toBeNull();

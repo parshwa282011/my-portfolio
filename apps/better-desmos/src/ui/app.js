@@ -9,7 +9,7 @@ import { vfOptions } from "../render2d/colormap.js";
 import {
   defaultDoc,
   exampleRows,
-  RANGE3_OPTIONS,
+  BOX_PRESETS,
   VF_STEPS,
   newRow,
   loadLocal,
@@ -132,8 +132,14 @@ export function startApp(root) {
         <label class="check"><input type="checkbox" data-set="labels" /> Axis labels</label>
         <fieldset class="field group">
           <legend>3D view</legend>
-          <label>Axis range ±
-            <select data-set="range3"></select>
+          <div class="box-grid">
+            <span></span><span class="hd">from</span><span class="hd">to</span>
+            <label class="ax" for="box-x0">x</label><input class="num" type="number" step="any" id="box-x0" data-box="x0" /><input class="num" type="number" step="any" data-box="x1" aria-label="x to" />
+            <label class="ax" for="box-y0">y</label><input class="num" type="number" step="any" id="box-y0" data-box="y0" /><input class="num" type="number" step="any" data-box="y1" aria-label="y to" />
+            <label class="ax" for="box-z0">z</label><input class="num" type="number" step="any" id="box-z0" data-box="z0" /><input class="num" type="number" step="any" data-box="z1" aria-label="z to" />
+          </div>
+          <label>Preset (same on every axis)
+            <select data-set="boxpreset"></select>
           </label>
           <label>Surface opacity
             <select data-set="opacity3">
@@ -827,7 +833,7 @@ export function startApp(root) {
   // ------------------------------------------------------------------ settings
   function syncSettingsUI() {
     for (const r of dialog.querySelectorAll("input[name=angle]")) r.checked = r.value === doc.settings.angle;
-    fillSelect($("[data-set=range3]", dialog), RANGE3_OPTIONS, doc.settings.range3);
+    syncBoxUI();
     fillSelect($("[data-set=vf-step]", dialog), VF_STEPS, doc.settings.vf.step);
     $("[data-set=opacity3]", dialog).value = String(doc.settings.opacity3);
     $("[data-set=vf-len]", dialog).value = doc.settings.vf.len;
@@ -835,6 +841,19 @@ export function startApp(root) {
     $("[data-set=vf-mag]", dialog).checked = doc.settings.vf.mag;
     for (const k of ["grid", "axes", "labels"]) $(`[data-set=${k}]`, dialog).checked = doc.settings[k];
     $("[data-set=theme]", dialog).value = currentTheme();
+  }
+
+  function syncBoxUI() {
+    for (const input of dialog.querySelectorAll("[data-box]")) {
+      input.value = String(doc.settings.box[input.dataset.box[0]][Number(input.dataset.box[1])]);
+    }
+    // the preset shows a value only when all three axes are the same ±R
+    const { x, y, z } = doc.settings.box;
+    const R = x[1];
+    const sym = [x, y, z].every((r) => r[0] === -R && r[1] === R) ? R : "";
+    const sel = $("[data-set=boxpreset]", dialog);
+    sel.replaceChildren(el("option", { value: "", textContent: "custom" }), ...BOX_PRESETS.map((v) => el("option", { value: String(v), textContent: `±${v}` })));
+    sel.value = String(sym);
   }
 
   function fillSelect(sel, values, current) {
@@ -855,10 +874,28 @@ export function startApp(root) {
     } else if (["grid", "axes", "labels"].includes(key)) {
       doc.settings[key] = t.checked;
       pushSettings();
-    } else if (key === "range3") {
-      doc.settings.range3 = Number(t.value);
-      pushSettings();
-      graph3?.resetView();
+    } else if (key === "boxpreset") {
+      const R = Number(t.value);
+      if (R > 0) {
+        doc.settings.box = { x: [-R, R], y: [-R, R], z: [-R, R] };
+        syncBoxUI();
+        pushSettings();
+        graph3?.resetView();
+      }
+    } else if (t.dataset.box) {
+      const [axis, end] = [t.dataset.box[0], Number(t.dataset.box[1])];
+      const v = Number(t.value);
+      const r = [...doc.settings.box[axis]];
+      r[end] = v;
+      if (Number.isFinite(v) && r[0] < r[1] && r[1] - r[0] >= 1e-3 && Math.abs(v) <= 1e6) {
+        doc.settings.box = { ...doc.settings.box, [axis]: r };
+        pushSettings();
+        graph3?.resetView();
+        syncBoxUI();
+      } else {
+        toast("Each axis needs a start below its end");
+        syncBoxUI();
+      }
     } else if (key === "opacity3") {
       doc.settings.opacity3 = Number(t.value);
       pushSettings();

@@ -2,26 +2,39 @@
 // test). Everything returns plain typed arrays.
 import { referenceMagnitude } from "../render2d/colormap.js";
 
-const LIMIT = 30; // values beyond ±LIMIT·R are treated as "off to infinity"
+const LIMIT = 30; // values far outside the box are treated as "off to infinity"
+
+// The 3D view shows an axis-aligned box:  { x:[x0,x1], y:[y0,y1], z:[z0,z1] }
+export const cubeBox = (R) => ({ x: [-R, R], y: [-R, R], z: [-R, R] });
+export const boxSpan = (box) => ({ x: box.x[1] - box.x[0], y: box.y[1] - box.y[0], z: box.z[1] - box.z[0] });
+export const boxSize = (box) => {
+  const s = boxSpan(box);
+  return Math.max(s.x, s.y, s.z);
+};
+const reach = (box) => LIMIT * Math.max(boxSize(box), ...["x", "y", "z"].flatMap((k) => box[k].map(Math.abs)));
+const lerp = (r, i, n) => r[0] + ((r[1] - r[0]) * i) / n;
 
 // ----------------------------------------------------------------- surfaces
 // Heightfield over a regular grid: axis "z" -> z=f(x,y), "y" -> y=f(x,z), "x" -> x=f(y,z).
-export function heightfield(fn, axis, R, N) {
+export function heightfield(fn, axis, box, N) {
+  const [ra, rb] = axis === "z" ? [box.x, box.y] : axis === "y" ? [box.x, box.z] : [box.y, box.z];
+  const big = reach(box);
   return gridSurface(
     N,
     (i, j) => {
-      const a = -R + (2 * R * i) / N;
-      const b = -R + (2 * R * j) / N;
+      const a = lerp(ra, i, N);
+      const b = lerp(rb, j, N);
       const v = fn(a, b);
-      if (!Number.isFinite(v) || Math.abs(v) > LIMIT * R) return null;
+      if (!Number.isFinite(v) || Math.abs(v) > big) return null;
       return axis === "z" ? [a, b, v] : axis === "y" ? [a, v, b] : [v, a, b];
     },
-    R * 3 // a single cell taller than this is a jump (asymptote), not a surface
+    boxSpan(box)[axis] * 3 // a single cell taller than this is a jump (asymptote), not a surface
   );
 }
 
 // (u, v) -> (x, y, z)
-export function parametricSurface(fx, fy, fz, [u0, u1], [v0, v1], R, N) {
+export function parametricSurface(fx, fy, fz, [u0, u1], [v0, v1], box, N) {
+  const big = reach(box);
   return gridSurface(
     N,
     (i, j) => {
@@ -30,7 +43,7 @@ export function parametricSurface(fx, fy, fz, [u0, u1], [v0, v1], R, N) {
       const x = fx(u, v);
       const y = fy(u, v);
       const z = fz(u, v);
-      if (![x, y, z].every(Number.isFinite) || Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) > LIMIT * R) return null;
+      if (![x, y, z].every(Number.isFinite) || Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) > big) return null;
       return [x, y, z];
     },
     Infinity
@@ -84,30 +97,43 @@ const TETS = [
 ];
 const MAX_TRIS = 450000;
 
-// F(x,y,z) = 0 inside [-R,R]^3 by marching tetrahedra. Triangles are wound so that
+// F(x,y,z) = 0 inside the box by marching tetrahedra. Triangles are wound so that
 // their front face points along +∇F, and each vertex carries the field's gradient
 // as its normal (smooth shading without welding vertices).
-export function marchingTets(fn, R, N) {
-  const n1 = N + 1;
-  const h = (2 * R) / N;
-  const vals = new Float32Array(n1 * n1 * n1);
+export function marchingTets(fn, box, N) {
+  // N cells along the longest side; the others follow in proportion (at least 6)
+  const span = boxSpan(box);
+  const h = boxSize(box) / N;
+  const nx = Math.max(6, Math.round(span.x / h));
+  const ny = Math.max(6, Math.round(span.y / h));
+  const nz = Math.max(6, Math.round(span.z / h));
+  const hx = span.x / nx;
+  const hy = span.y / ny;
+  const hz = span.z / nz;
+  const [X0, Y0, Z0] = [box.x[0], box.y[0], box.z[0]];
+  const mx = nx + 1;
+  const my = ny + 1;
+  const vals = new Float32Array(mx * my * (nz + 1));
   let p = 0;
-  for (let k = 0; k < n1; k++) {
-    const z = -R + k * h;
-    for (let j = 0; j < n1; j++) {
-      const y = -R + j * h;
-      for (let i = 0; i < n1; i++) vals[p++] = fn(-R + i * h, y, z);
+  for (let k = 0; k <= nz; k++) {
+    const z = Z0 + k * hz;
+    for (let j = 0; j <= ny; j++) {
+      const y = Y0 + j * hy;
+      for (let i = 0; i <= nx; i++) vals[p++] = fn(X0 + i * hx, y, z);
     }
   }
-  const at = (i, j, k) => (k * n1 + j) * n1 + i;
+  const at = (i, j, k) => (k * my + j) * mx + i;
 
   const pos = [];
   const nor = [];
-  const eps = h * 0.5;
+  const ex = hx * 0.5;
+  const ey = hy * 0.5;
+  const ez = hz * 0.5;
   const gradient = (x, y, z) => {
-    const gx = fn(x + eps, y, z) - fn(x - eps, y, z);
-    const gy = fn(x, y + eps, z) - fn(x, y - eps, z);
-    const gz = fn(x, y, z + eps) - fn(x, y, z - eps);
+    // scaled so each partial is per unit length, then normalised
+    const gx = (fn(x + ex, y, z) - fn(x - ex, y, z)) / ex;
+    const gy = (fn(x, y + ey, z) - fn(x, y - ey, z)) / ey;
+    const gz = (fn(x, y, z + ez) - fn(x, y, z - ez)) / ez;
     const m = Math.hypot(gx, gy, gz);
     return Number.isFinite(m) && m > 0 ? [gx / m, gy / m, gz / m] : null;
   };
@@ -151,9 +177,9 @@ export function marchingTets(fn, R, N) {
     ];
   };
 
-  for (let k = 0; k < N && tris < MAX_TRIS; k++) {
-    for (let j = 0; j < N; j++) {
-      for (let i = 0; i < N; i++) {
+  for (let k = 0; k < nz && tris < MAX_TRIS; k++) {
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
         let lo = Infinity;
         let hi = -Infinity;
         let bad = false;
@@ -171,9 +197,9 @@ export function marchingTets(fn, R, N) {
         if (bad || lo > 0 || hi < 0) continue;
         for (let c = 0; c < 8; c++) {
           const o = CORNERS[c];
-          cp[3 * c] = -R + (i + o[0]) * h;
-          cp[3 * c + 1] = -R + (j + o[1]) * h;
-          cp[3 * c + 2] = -R + (k + o[2]) * h;
+          cp[3 * c] = X0 + (i + o[0]) * hx;
+          cp[3 * c + 1] = Y0 + (j + o[1]) * hy;
+          cp[3 * c + 2] = Z0 + (k + o[2]) * hz;
         }
         for (const t of TETS) {
           const ins = [];
@@ -203,7 +229,8 @@ export function marchingTets(fn, R, N) {
 
 // ------------------------------------------------------------------- curves
 // Samples t -> (x,y,z); breaks the curve at NaNs / escapes. Returns arrays of xyz.
-export function sampleCurve(fx, fy, fz, [t0, t1], R, samples = 1200) {
+export function sampleCurve(fx, fy, fz, [t0, t1], box, samples = 1200) {
+  const big = reach(box);
   const out = [];
   let cur = [];
   const flush = () => {
@@ -215,7 +242,7 @@ export function sampleCurve(fx, fy, fz, [t0, t1], R, samples = 1200) {
     const x = fx(t);
     const y = fy(t);
     const z = fz(t);
-    if (![x, y, z].every(Number.isFinite) || Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) > LIMIT * R) flush();
+    if (![x, y, z].every(Number.isFinite) || Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) > big) flush();
     else cur.push(x, y, z);
   }
   flush();
@@ -282,23 +309,29 @@ export function tube(points, radius, sides = 6) {
 // ------------------------------------------------------------------- fields
 const MAX_ARROWS_3D = 12000;
 
-// Arrows on a grid of spacing `step` (multiples of step inside [-R,R]^3, or just the
-// z=0 plane for a 2-component field). Spacing is raised by an integer factor if the
+// Arrows on a grid of spacing `step` (multiples of step inside the box, or just the
+// z = 0 plane for a 2-component field). Spacing is raised by an integer factor if the
 // count would be unreasonable; `coarsened` says so.
-export function sampleField3D(res, R, vf) {
+export function sampleField3D(res, box, vf) {
   const planar = res.planar;
-  let k = 1;
-  const count = (s) => {
-    const per = Math.floor((2 * R) / s) + 1;
-    return planar ? per * per : per * per * per;
+  const idx = (r, step) => {
+    const lo = Math.ceil(r[0] / step - 1e-9);
+    const hi = Math.floor(r[1] / step + 1e-9);
+    const out = [];
+    for (let i = lo; i <= hi; i++) out.push(i);
+    return out;
   };
+  const count = (s) => {
+    const nz = planar ? (box.z[0] <= 0 && box.z[1] >= 0 ? 1 : 0) : idx(box.z, s).length;
+    return idx(box.x, s).length * idx(box.y, s).length * nz;
+  };
+  let k = 1;
   while (count(vf.step * k) > MAX_ARROWS_3D) k++;
   const step = vf.step * k;
-  const lim = Math.floor(R / step + 1e-9);
-  const zs = planar ? [0] : range(-lim, lim);
+  const zs = planar ? (box.z[0] <= 0 && box.z[1] >= 0 ? [0] : []) : idx(box.z, step);
   const items = [];
-  for (const i of range(-lim, lim)) {
-    for (const j of range(-lim, lim)) {
+  for (const i of idx(box.x, step)) {
+    for (const j of idx(box.y, step)) {
       for (const l of zs) {
         const x = i * step;
         const y = j * step;
@@ -320,10 +353,4 @@ export function sampleField3D(res, R, vf) {
     a.len = vf.len === "unit" ? 0.7 * step : Math.max(0.12 * step, t * 0.9 * step);
   }
   return { items, step, coarsened: k > 1 };
-}
-
-function range(a, b) {
-  const out = [];
-  for (let i = a; i <= b; i++) out.push(i);
-  return out;
 }

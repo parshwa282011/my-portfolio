@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { heightfield, parametricSurface, marchingTets, sampleCurve, tube, sampleField3D } from "./geometry3d.js";
+import { heightfield, parametricSurface, marchingTets, sampleCurve, tube, sampleField3D, cubeBox, boxSize } from "./geometry3d.js";
 import { rampHex, vfOptions } from "../render2d/colormap.js";
 import { niceStep } from "../render2d/viewport.js";
 
@@ -16,7 +16,9 @@ const fmt = (v) => {
 };
 
 // 1-2-5 step that gives about ten ticks across the box
-const tickStep = (R) => niceStep((2 * R) / 10);
+const tickStep = (span) => niceStep(span / 10);
+const clamp0 = (r) => Math.min(Math.max(0, r[0]), r[1]); // where the axis crosses: the origin, or the nearest edge
+const centre = (box) => [(box.x[0] + box.x[1]) / 2, (box.y[0] + box.y[1]) / 2, (box.z[0] + box.z[1]) / 2];
 
 function labelSprite(text, color, size) {
   const c = document.createElement("canvas");
@@ -56,7 +58,7 @@ export class Graph3D {
     this.onViewChange = onViewChange || (() => {});
     this.onNotes = onNotes || (() => {});
     this.items = [];
-    this.settings = { grid: true, axes: true, labels: true, range3: 5, opacity3: 1, vf: null };
+    this.settings = { grid: true, axes: true, labels: true, box: cubeBox(5), opacity3: 1, vf: null };
     this.objs = new Map(); // rowId -> { sig, group }
     this.pickables = [];
     this._raf = 0;
@@ -114,9 +116,9 @@ export class Graph3D {
   }
 
   setSettings(s) {
-    const before = this.settings.range3;
+    const before = JSON.stringify(this.settings.box);
     this.settings = { ...this.settings, ...s };
-    if (before !== this.settings.range3) this._applyRange();
+    if (before !== JSON.stringify(this.settings.box)) this._applyRange();
     this.invalidate();
   }
 
@@ -149,19 +151,20 @@ export class Graph3D {
   }
 
   _applyRange() {
-    const R = this.settings.range3;
-    this.camera.near = R * 0.01;
-    this.camera.far = R * 100;
+    const S = boxSize(this.settings.box);
+    this.camera.near = S * 0.005;
+    this.camera.far = S * 50;
     this.camera.updateProjectionMatrix();
-    this.controls.minDistance = R * 0.25;
-    this.controls.maxDistance = R * 40;
+    this.controls.minDistance = S * 0.12;
+    this.controls.maxDistance = S * 20;
   }
 
   resetView() {
-    const R = this.settings.range3;
+    const S = boxSize(this.settings.box);
+    const c = centre(this.settings.box);
     this._applyRange();
-    this.camera.position.set(R * 2.0, -R * 2.45, R * 1.6);
-    this.controls.target.set(0, 0, 0);
+    this.camera.position.set(c[0] + S * 1.0, c[1] - S * 1.22, c[2] + S * 0.8);
+    this.controls.target.set(...c);
     this.controls.update();
     this._requestRender();
     this.onViewChange(this.getView());
@@ -241,19 +244,20 @@ export class Graph3D {
     }
   }
 
-  _clipPlanes(R) {
+  _clipPlanes(box) {
+    const { x, y, z } = box;
     return [
-      new THREE.Plane(new THREE.Vector3(1, 0, 0), R),
-      new THREE.Plane(new THREE.Vector3(-1, 0, 0), R),
-      new THREE.Plane(new THREE.Vector3(0, 1, 0), R),
-      new THREE.Plane(new THREE.Vector3(0, -1, 0), R),
-      new THREE.Plane(new THREE.Vector3(0, 0, 1), R),
-      new THREE.Plane(new THREE.Vector3(0, 0, -1), R),
+      new THREE.Plane(new THREE.Vector3(1, 0, 0), -x[0]),
+      new THREE.Plane(new THREE.Vector3(-1, 0, 0), x[1]),
+      new THREE.Plane(new THREE.Vector3(0, 1, 0), -y[0]),
+      new THREE.Plane(new THREE.Vector3(0, -1, 0), y[1]),
+      new THREE.Plane(new THREE.Vector3(0, 0, 1), -z[0]),
+      new THREE.Plane(new THREE.Vector3(0, 0, -1), z[1]),
     ];
   }
 
   _build() {
-    const R = this.settings.range3;
+    const box = this.settings.box;
     const theme = {
       bg: css(this.container, "--graph-bg", "#ffffff"),
       grid: css(this.container, "--graph-grid", "#d9e0ea"),
@@ -263,13 +267,13 @@ export class Graph3D {
     this.scene.background = new THREE.Color(theme.bg);
 
     const { grid, axes, labels } = this.settings;
-    const frameSig = JSON.stringify([R, grid, axes, labels, theme]);
+    const frameSig = JSON.stringify([box, grid, axes, labels, theme]);
     if (frameSig !== this._frameSig) {
       this._frameSig = frameSig;
-      this._buildFrame(R, theme);
+      this._buildFrame(box, theme);
     }
 
-    const planes = this._clipPlanes(R);
+    const planes = this._clipPlanes(box);
     const notes = [];
     const seen = new Set();
     this.pickables = [];
@@ -285,7 +289,7 @@ export class Graph3D {
       const vf = result.kind === "field" ? vfOptions(this.settings.vf, row.vf) : null;
       const sig = JSON.stringify([
         row.color,
-        R,
+        box,
         this.settings.opacity3,
         vf,
         row.tmin, row.tmax, row.umin, row.umax, row.vmin, row.vmax,
@@ -297,7 +301,7 @@ export class Graph3D {
           this._clearGroup(entry.group);
         }
         const group = new THREE.Group();
-        const info = this._buildRow(group, row, result, R, planes, vf);
+        const info = this._buildRow(group, row, result, box, planes, vf);
         this.world.add(group);
         entry = { sig, result, group, info };
         this.objs.set(row.id, entry);
@@ -316,64 +320,81 @@ export class Graph3D {
     this.onNotes(notes);
   }
 
-  _buildFrame(R, theme) {
+  _buildFrame(box, theme) {
     this._clearGroup(this.frame);
     const { grid, axes, labels } = this.settings;
-    const step = tickStep(R);
+    const S = boxSize(box);
+    const [x0, x1] = box.x;
+    const [y0, y1] = box.y;
+    const [z0, z1] = box.z;
+    const stepX = tickStep(x1 - x0);
+    const stepY = tickStep(y1 - y0);
+    const stepZ = tickStep(z1 - z0);
+    const ticks = (lo, hi, step) => {
+      const out = [];
+      for (let i = Math.ceil(lo / step - 1e-9); i * step <= hi + 1e-9; i++) out.push(Math.round(i * 1e9 * step) / 1e9);
+      return out;
+    };
     const gridColor = new THREE.Color(theme.grid);
+    const [cx, cy, cz] = [clamp0(box.x), clamp0(box.y), clamp0(box.z)]; // where the axes cross
     if (grid) {
       const pts = [];
-      for (let v = -R; v <= R + 1e-9; v += step) {
-        pts.push(v, -R, 0, v, R, 0, -R, v, 0, R, v, 0);
-      }
+      for (const v of ticks(x0, x1, stepX)) pts.push(v, y0, cz, v, y1, cz);
+      for (const v of ticks(y0, y1, stepY)) pts.push(x0, v, cz, x1, v, cz);
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
       this.frame.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: gridColor, transparent: true, opacity: 0.9 })));
     }
     if (axes) {
-      const box = [];
-      const c = [-R, R];
-      for (const a of c) for (const b of c) {
-        box.push(-R, a, b, R, a, b, a, -R, b, a, R, b, a, b, -R, a, b, R);
-      }
+      const edges = [];
+      for (const y of [y0, y1]) for (const z of [z0, z1]) edges.push(x0, y, z, x1, y, z);
+      for (const x of [x0, x1]) for (const z of [z0, z1]) edges.push(x, y0, z, x, y1, z);
+      for (const x of [x0, x1]) for (const y of [y0, y1]) edges.push(x, y, z0, x, y, z1);
       const bg = new THREE.BufferGeometry();
-      bg.setAttribute("position", new THREE.Float32BufferAttribute(box, 3));
+      bg.setAttribute("position", new THREE.Float32BufferAttribute(edges, 3));
       this.frame.add(new THREE.LineSegments(bg, new THREE.LineBasicMaterial({ color: gridColor, transparent: true, opacity: 0.55 })));
 
       const colors = [0xe0524f, 0x3fae5d, 0x4a7de0];
-      [[R, 0, 0], [0, R, 0], [0, 0, R]].forEach((end, i) => {
+      const lines = [
+        [x0, cy, cz, x1, cy, cz],
+        [cx, y0, cz, cx, y1, cz],
+        [cx, cy, z0, cx, cy, z1],
+      ];
+      lines.forEach((l, i) => {
         const g = new THREE.BufferGeometry();
-        g.setAttribute("position", new THREE.Float32BufferAttribute([-end[0], -end[1], -end[2], ...end], 3));
+        g.setAttribute("position", new THREE.Float32BufferAttribute(l, 3));
         this.frame.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: colors[i] })));
       });
       const names = ["x", "y", "z"];
       const css3 = ["#e0524f", "#3fae5d", "#4a7de0"];
-      [[R, 0, 0], [0, R, 0], [0, 0, R]].forEach((end, i) => {
-        const sp = labelSprite(names[i], css3[i], R * 0.09);
-        sp.position.set(end[0] * 1.07, end[1] * 1.07, end[2] * 1.07);
+      const ends = [
+        [x1 + S * 0.035, cy, cz],
+        [cx, y1 + S * 0.035, cz],
+        [cx, cy, z1 + S * 0.035],
+      ];
+      ends.forEach((e, i) => {
+        const sp = labelSprite(names[i], css3[i], S * 0.045);
+        sp.position.set(...e);
         this.frame.add(sp);
       });
     }
     if (labels) {
-      const size = R * 0.06;
+      const size = S * 0.03;
       const add = (v, x, y, z) => {
         const sp = labelSprite(fmt(v), theme.text, size);
         sp.position.set(x, y, z);
         this.frame.add(sp);
       };
-      const off = R * 0.055;
-      for (let v = -R; v <= R + 1e-9; v += step) {
-        const r = Math.round(v / step) * step;
-        if (Math.abs(r) < step * 1e-6) continue;
-        add(r, r, -R - off * 1.6, 0);
-        add(r, -R - off * 1.6, r, 0);
-        add(r, -R - off * 1.6, -R - off * 1.6, r);
-      }
+      const off = S * 0.044;
+      for (const v of ticks(x0, x1, stepX)) if (Math.abs(v) > stepX * 1e-6) add(v, v, y0 - off, cz);
+      for (const v of ticks(y0, y1, stepY)) if (Math.abs(v) > stepY * 1e-6) add(v, x0 - off, v, cz);
+      for (const v of ticks(z0, z1, stepZ)) if (Math.abs(v) > stepZ * 1e-6) add(v, x0 - off, y0 - off, v);
     }
   }
 
   // Returns { pick: [meshes], note }
-  _buildRow(group, row, result, R, planes, vf) {
+  _buildRow(group, row, result, box, planes, vf) {
+    const S = boxSize(box);
     const color = new THREE.Color(row.color);
     const opacity = this.settings.opacity3;
     const surfMat = () =>
@@ -414,13 +435,13 @@ export class Graph3D {
 
     switch (result.kind) {
       case "surface":
-        addGrid(fromGrid(heightfield(result.fn, result.axis, R, 140)));
+        addGrid(fromGrid(heightfield(result.fn, result.axis, box, 140)));
         break;
       case "psurface":
-        addGrid(fromGrid(parametricSurface(result.fx, result.fy, result.fz, result.urange, result.vrange, R, 120)));
+        addGrid(fromGrid(parametricSurface(result.fx, result.fy, result.fz, result.urange, result.vrange, box, 120)));
         break;
       case "implicit3": {
-        const m = marchingTets(result.fn, R, 56);
+        const m = marchingTets(result.fn, box, 56);
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.BufferAttribute(m.positions, 3));
         geo.setAttribute("normal", new THREE.BufferAttribute(m.normals, 3));
@@ -431,8 +452,8 @@ export class Graph3D {
       }
       case "curve3": {
         const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, clippingPlanes: planes });
-        for (const seg of sampleCurve(result.fx, result.fy, result.fz, result.range, R, 1600)) {
-          const t = tube(Float32Array.from(seg), R * 0.011, 6);
+        for (const seg of sampleCurve(result.fx, result.fy, result.fz, result.range, box, 1600)) {
+          const t = tube(Float32Array.from(seg), S * 0.0055, 6);
           const geo = new THREE.BufferGeometry();
           geo.setAttribute("position", new THREE.BufferAttribute(t.positions, 3));
           geo.setAttribute("normal", new THREE.BufferAttribute(t.normals, 3));
@@ -444,7 +465,7 @@ export class Graph3D {
       case "point3":
       case "points3": {
         const list = result.kind === "point3" ? [result] : result.items;
-        const geo = new THREE.SphereGeometry(R * 0.022, 20, 14);
+        const geo = new THREE.SphereGeometry(S * 0.011, 20, 14);
         const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.35 });
         for (const p of list) {
           const x = p.fx();
@@ -458,7 +479,7 @@ export class Graph3D {
         break;
       }
       case "field": {
-        const s = sampleField3D(result, R, vf);
+        const s = sampleField3D(result, box, vf);
         const n = s.items.length;
         if (n) {
           const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.05 });
@@ -506,9 +527,11 @@ export class Graph3D {
     const r = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1));
     this.raycaster.setFromCamera(ndc, this.camera);
-    const R = this.settings.range3 + 1e-6;
+    const B = this.settings.box;
+    const eps = boxSize(B) * 1e-6;
+    const inside = (p) => p.x >= B.x[0] - eps && p.x <= B.x[1] + eps && p.y >= B.y[0] - eps && p.y <= B.y[1] + eps && p.z >= B.z[0] - eps && p.z <= B.z[1] + eps;
     const hit = this.raycaster.intersectObjects(this.pickables, false).find(
-      (h) => Math.abs(h.point.x) <= R && Math.abs(h.point.y) <= R && Math.abs(h.point.z) <= R
+      (h) => inside(h.point)
     );
     if (!hit) {
       this.tip.hidden = true;
