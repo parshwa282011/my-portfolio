@@ -1,6 +1,7 @@
 // Pure geometry builders for the 3D view (no three.js here, so they are easy to
 // test). Everything returns plain typed arrays.
 import { referenceMagnitude } from "../render2d/colormap.js";
+import { mulMV, mulTV } from "./rot4.js";
 
 const LIMIT = 30; // values far outside the box are treated as "off to infinity"
 
@@ -54,6 +55,7 @@ function gridSurface(N, point, maxJump) {
   const n1 = N + 1;
   const pos = new Float32Array(n1 * n1 * 3);
   const ok = new Uint8Array(n1 * n1);
+  let col = null; // a 4th component from point() is a 0..1 colour coordinate
   for (let j = 0; j < n1; j++) {
     for (let i = 0; i < n1; i++) {
       const p = point(i, j);
@@ -62,6 +64,7 @@ function gridSurface(N, point, maxJump) {
         pos[3 * k] = p[0];
         pos[3 * k + 1] = p[1];
         pos[3 * k + 2] = p[2];
+        if (p.length > 3) (col ||= new Float32Array(n1 * n1))[k] = p[3];
         ok[k] = 1;
       }
     }
@@ -83,7 +86,24 @@ function gridSurface(N, point, maxJump) {
       if (j % LINE_EVERY === 0) lines.push(a, b);
     }
   }
-  return { positions: pos, indices: Uint32Array.from(idx), lineIndices: Uint32Array.from(lines) };
+  return { positions: pos, indices: Uint32Array.from(idx), lineIndices: Uint32Array.from(lines), colorCoord: col };
+}
+
+// (u, v) -> 4D point, rotated and projected to 3D; the 4th coordinate of each vertex
+// (position along w') is returned as colorCoord.
+export function parametricSurface4(f4, [u0, u1], [v0, v1], box, N, project) {
+  const big = reach(box);
+  return gridSurface(
+    N,
+    (i, j) => {
+      const p = f4(u0 + ((u1 - u0) * i) / N, v0 + ((v1 - v0) * j) / N);
+      if (!p.every(Number.isFinite)) return null;
+      const q = project(p);
+      if (!q || Math.max(...q.pos.map(Math.abs)) > big) return null;
+      return [q.pos[0], q.pos[1], q.pos[2], q.t];
+    },
+    Infinity
+  );
 }
 
 // ------------------------------------------------------- implicit surfaces
@@ -249,11 +269,34 @@ export function sampleCurve(fx, fy, fz, [t0, t1], box, samples = 1200) {
   return out;
 }
 
+// t -> 4D point, projected. Returns [{ pos: [...xyz], col: [...t] }, ...] split at gaps.
+export function sampleCurve4(f4, [t0, t1], box, project, samples = 1600) {
+  const big = reach(box);
+  const out = [];
+  let cur = { pos: [], col: [] };
+  const flush = () => {
+    if (cur.col.length >= 2) out.push(cur);
+    cur = { pos: [], col: [] };
+  };
+  for (let i = 0; i <= samples; i++) {
+    const p = f4(t0 + ((t1 - t0) * i) / samples);
+    const q = p.every(Number.isFinite) ? project(p) : null;
+    if (!q || Math.max(...q.pos.map(Math.abs)) > big) flush();
+    else {
+      cur.pos.push(...q.pos);
+      cur.col.push(q.t);
+    }
+  }
+  flush();
+  return out;
+}
+
 // Tube around a polyline (parallel-transport frames, so no twisting).
-export function tube(points, radius, sides = 6) {
+export function tube(points, radius, sides = 6, colorCoord = null) {
   const n = points.length / 3;
   const pos = new Float32Array(n * sides * 3);
   const nor = new Float32Array(n * sides * 3);
+  const cc = colorCoord ? new Float32Array(n * sides) : null;
   const T = (i) => {
     const a = Math.max(0, i - 1);
     const b = Math.min(n - 1, i + 1);
@@ -291,6 +334,7 @@ export function tube(points, radius, sides = 6) {
       nor[o] = nx;
       nor[o + 1] = ny;
       nor[o + 2] = nz;
+      if (cc) cc[i * sides + s] = colorCoord[i];
     }
   }
   const idx = [];
@@ -303,7 +347,7 @@ export function tube(points, radius, sides = 6) {
       idx.push(a, c, b, b, c, d);
     }
   }
-  return { positions: pos, normals: nor, indices: Uint32Array.from(idx) };
+  return { positions: pos, normals: nor, indices: Uint32Array.from(idx), colorCoord: cc };
 }
 
 // ------------------------------------------------------------------- fields
@@ -351,6 +395,49 @@ export function sampleField3D(res, box, vf) {
     const t = Math.min(1, a.m / ref);
     a.t = t;
     a.len = vf.len === "unit" ? 0.7 * step : Math.max(0.12 * step, t * 0.9 * step);
+  }
+  return { items, step, coarsened: k > 1 };
+}
+
+// ------------------------------------------------------------- 4D fields
+// Arrows on the 3D slice w' = w0 of the rotated space. The field is evaluated at the
+// matching 4D world point, then rotated into view coordinates; the arrow shows the
+// (x', y', z') part, and colour can say how much of the field points along w'.
+export function sampleField4D(res, box, vf, M, w0) {
+  const idx = (r, step) => {
+    const lo = Math.ceil(r[0] / step - 1e-9);
+    const hi = Math.floor(r[1] / step + 1e-9);
+    const out = [];
+    for (let i = lo; i <= hi; i++) out.push(i);
+    return out;
+  };
+  const count = (s) => idx(box.x, s).length * idx(box.y, s).length * idx(box.z, s).length;
+  let k = 1;
+  while (count(vf.step * k) > MAX_ARROWS_3D) k++;
+  const step = vf.step * k;
+  const items = [];
+  for (const i of idx(box.x, step)) {
+    for (const j of idx(box.y, step)) {
+      for (const l of idx(box.z, step)) {
+        const x = i * step;
+        const y = j * step;
+        const z = l * step;
+        const p = mulTV(M, [x, y, z, w0]);
+        const F = [res.fx(...p), res.fy(...p), res.fz(...p), res.fw(...p)];
+        if (!F.every(Number.isFinite)) continue;
+        const v = mulMV(M, F);
+        const m = Math.hypot(v[0], v[1], v[2]);
+        if (m < 1e-12 * (Math.hypot(...F) || 1) || m === 0) continue;
+        items.push({ x, y, z, dx: v[0] / m, dy: v[1] / m, dz: v[2] / m, m, w: v[3], full: Math.hypot(...v) });
+      }
+    }
+  }
+  const ref = referenceMagnitude(items.map((a) => a.m));
+  const wref = referenceMagnitude(items.map((a) => Math.abs(a.w))) || 1;
+  for (const a of items) {
+    const t = Math.min(1, a.m / ref);
+    a.len = vf.len === "unit" ? 0.7 * step : Math.max(0.12 * step, t * 0.9 * step);
+    a.t = vf.by === "w" ? 0.5 + 0.5 * Math.max(-1, Math.min(1, a.w / wref)) : t;
   }
   return { items, step, coarsened: k > 1 };
 }

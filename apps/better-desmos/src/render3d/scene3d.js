@@ -1,13 +1,26 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { heightfield, parametricSurface, marchingTets, sampleCurve, tube, sampleField3D, cubeBox, boxSize } from "./geometry3d.js";
+import {
+  heightfield,
+  parametricSurface,
+  parametricSurface4,
+  marchingTets,
+  sampleCurve,
+  sampleCurve4,
+  tube,
+  sampleField3D,
+  sampleField4D,
+  cubeBox,
+  boxSize,
+} from "./geometry3d.js";
+import { rotation4, isIdentity4, sliceFunction, projector, mulTV } from "./rot4.js";
 import { rampHex, vfOptions } from "../render2d/colormap.js";
 import { niceStep } from "../render2d/viewport.js";
 
 const css = (el, name, fallback) => getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 
-const KINDS_3D = new Set(["surface", "implicit3", "psurface", "curve3", "point3", "points3", "field"]);
+const KINDS_3D = new Set(["surface", "implicit3", "psurface", "curve3", "point3", "points3", "field", "implicit4", "curve4", "point4", "points4", "psurface4"]);
 
 const fmt = (v) => {
   if (Math.abs(v) < 1e-9) return "0";
@@ -58,7 +71,7 @@ export class Graph3D {
     this.onViewChange = onViewChange || (() => {});
     this.onNotes = onNotes || (() => {});
     this.items = [];
-    this.settings = { grid: true, axes: true, labels: true, box: cubeBox(5), opacity3: 1, vf: null };
+    this.settings = { grid: true, axes: true, labels: true, box: { ...cubeBox(5), w: [-5, 5] }, opacity3: 1, vf: null, mode4: false, view4: { rot: [0, 0, 0], proj: "ortho" } };
     this.objs = new Map(); // rowId -> { sig, group }
     this.pickables = [];
     this._raf = 0;
@@ -275,6 +288,16 @@ export class Graph3D {
 
     const planes = this._clipPlanes(box);
     const notes = [];
+    const four = this.settings.mode4;
+    const v4 = this.settings.view4;
+    const w0 = this.P.w ?? 0;
+    const ctx4 = four
+      ? { M: rotation4(v4.rot), w0, ident: isIdentity4(v4.rot), perspective: v4.proj === "persp", wRange: box.w }
+      : null;
+    if (four) {
+      notes.push(`w = ${fmt(w0)}`);
+      if (!ctx4.ident) notes.push(`rotated  xw ${fmt(v4.rot[0])}°  yw ${fmt(v4.rot[1])}°  zw ${fmt(v4.rot[2])}°`);
+    }
     const seen = new Set();
     this.pickables = [];
     for (const item of this.items) {
@@ -294,6 +317,7 @@ export class Graph3D {
         vf,
         row.tmin, row.tmax, row.umin, row.umax, row.vmin, row.vmax,
         (result.deps || []).map((n) => this.P[n]),
+        four ? [v4, w0, box.w] : null,
       ]);
       if (!entry || entry.result !== result || entry.sig !== sig) {
         if (entry) {
@@ -301,7 +325,7 @@ export class Graph3D {
           this._clearGroup(entry.group);
         }
         const group = new THREE.Group();
-        const info = this._buildRow(group, row, result, box, planes, vf);
+        const info = this._buildRow(group, row, result, box, planes, vf, ctx4);
         this.world.add(group);
         entry = { sig, result, group, info };
         this.objs.set(row.id, entry);
@@ -393,13 +417,14 @@ export class Graph3D {
   }
 
   // Returns { pick: [meshes], note }
-  _buildRow(group, row, result, box, planes, vf) {
+  _buildRow(group, row, result, box, planes, vf, ctx4) {
     const S = boxSize(box);
     const color = new THREE.Color(row.color);
     const opacity = this.settings.opacity3;
-    const surfMat = () =>
+    const surfMat = (vertexColors = false) =>
       new THREE.MeshStandardMaterial({
-        color,
+        color: vertexColors ? 0xffffff : color,
+        vertexColors,
         side: THREE.DoubleSide,
         roughness: 0.55,
         metalness: 0.05,
@@ -415,7 +440,7 @@ export class Graph3D {
     const pick = [];
 
     const addGrid = (g) => {
-      const mesh = new THREE.Mesh(g.geo, surfMat());
+      const mesh = new THREE.Mesh(g.geo, surfMat(g.colored));
       group.add(mesh);
       pick.push(mesh);
       if (g.lineIndices?.length) {
@@ -425,12 +450,22 @@ export class Graph3D {
         group.add(new THREE.LineSegments(lg, lineMat()));
       }
     };
+    const rgb = (coords) => {
+      const out = new Float32Array(coords.length * 3);
+      const c = new THREE.Color();
+      for (let i = 0; i < coords.length; i++) {
+        c.setHex(rampHex(coords[i]));
+        out.set([c.r, c.g, c.b], i * 3);
+      }
+      return new THREE.BufferAttribute(out, 3);
+    };
     const fromGrid = (s) => {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.BufferAttribute(s.positions, 3));
+      if (s.colorCoord) geo.setAttribute("color", rgb(s.colorCoord));
       geo.setIndex(new THREE.BufferAttribute(s.indices, 1));
       geo.computeVertexNormals();
-      return { geo, lineIndices: s.lineIndices };
+      return { geo, lineIndices: s.lineIndices, colored: !!s.colorCoord };
     };
 
     switch (result.kind) {
@@ -448,6 +483,54 @@ export class Graph3D {
         const mesh = new THREE.Mesh(geo, surfMat());
         group.add(mesh);
         pick.push(mesh);
+        break;
+      }
+      case "implicit4": {
+        if (ctx4.ident && result.surface) {
+          // z = f(x,y,w) and friends: a heightfield at the current w beats marching cubes
+          addGrid(fromGrid(heightfield(result.surface.fn, result.surface.axis, box, 140)));
+        } else {
+          const m = marchingTets(sliceFunction(result.fn4, ctx4.M, ctx4.w0), box, 56);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.BufferAttribute(m.positions, 3));
+          geo.setAttribute("normal", new THREE.BufferAttribute(m.normals, 3));
+          const mesh = new THREE.Mesh(geo, surfMat());
+          group.add(mesh);
+          pick.push(mesh);
+        }
+        break;
+      }
+      case "psurface4": {
+        const project = projector(ctx4.M, ctx4.wRange, ctx4.perspective);
+        addGrid(fromGrid(parametricSurface4(result.f4, result.urange, result.vrange, box, 120, project)));
+        break;
+      }
+      case "curve4": {
+        const project = projector(ctx4.M, ctx4.wRange, ctx4.perspective);
+        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.4, clippingPlanes: planes });
+        for (const seg of sampleCurve4(result.f4, result.range, box, project, 1600)) {
+          const t = tube(Float32Array.from(seg.pos), S * 0.0055, 6, Float32Array.from(seg.col));
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.BufferAttribute(t.positions, 3));
+          geo.setAttribute("normal", new THREE.BufferAttribute(t.normals, 3));
+          geo.setAttribute("color", rgb(t.colorCoord));
+          geo.setIndex(new THREE.BufferAttribute(t.indices, 1));
+          group.add(new THREE.Mesh(geo, mat));
+        }
+        break;
+      }
+      case "point4":
+      case "points4": {
+        const project = projector(ctx4.M, ctx4.wRange, ctx4.perspective);
+        const list = result.kind === "point4" ? [result.f4] : result.items;
+        const geo = new THREE.SphereGeometry(S * 0.011, 20, 14);
+        for (const f of list) {
+          const q = project(f());
+          if (!q || !q.pos.every(Number.isFinite)) continue;
+          const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: rampHex(q.t), roughness: 0.35 }));
+          m.position.set(...q.pos);
+          group.add(m);
+        }
         break;
       }
       case "curve3": {
@@ -479,7 +562,7 @@ export class Graph3D {
         break;
       }
       case "field": {
-        const s = sampleField3D(result, box, vf);
+        const s = ctx4 ? sampleField4D(result, box, vf, ctx4.M, ctx4.w0) : sampleField3D(result, box, vf);
         const n = s.items.length;
         if (n) {
           const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.05 });
@@ -538,7 +621,11 @@ export class Graph3D {
       return;
     }
     const p = hit.point;
-    this.tip.textContent = `(${fmt(p.x)}, ${fmt(p.y)}, ${fmt(p.z)})`;
+    if (this.settings.mode4) {
+      // report the true 4D point (undo the view rotation)
+      const q = mulTV(rotation4(this.settings.view4.rot), [p.x, p.y, p.z, this.P.w ?? 0]);
+      this.tip.textContent = `(${q.map(fmt).join(", ")})`;
+    } else this.tip.textContent = `(${fmt(p.x)}, ${fmt(p.y)}, ${fmt(p.z)})`;
     this.tip.style.left = `${e.clientX - r.left + 14}px`;
     this.tip.style.top = `${e.clientY - r.top + 14}px`;
     this.tip.hidden = false;

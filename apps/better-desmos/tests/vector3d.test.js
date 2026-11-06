@@ -234,7 +234,7 @@ describe("non-cubic boxes", () => {
     expect(sampleField3D(res, { x: [-2, 2], y: [-2, 2], z: [1, 3] }, { step: 1, len: "scaled" }).items.length).toBe(0);
   });
   it("old documents with one range keep working", () => {
-    expect(sanitize({ rows: [{ latex: "x" }], settings: { range3: 8 } }).settings.box).toEqual({ x: [-8, 8], y: [-8, 8], z: [-8, 8] });
+    expect(sanitize({ rows: [{ latex: "x" }], settings: { range3: 8 } }).settings.box).toEqual({ x: [-8, 8], y: [-8, 8], z: [-8, 8], w: [-8, 8] });
   });
 });
 
@@ -249,20 +249,20 @@ describe("document", () => {
     const back = sanitize(JSON.parse(JSON.stringify(d)));
     expect(back.mode).toBe("3d");
     expect(back.stash["2d"].length).toBe(6);
-    expect(back.settings.box).toEqual({ x: [0, 10], y: [-5, 5], z: [-2, 20] });
-    expect(back.settings.vf).toEqual({ step: 0.5, len: "unit", mag: false, style: "both" });
+    expect(back.settings.box).toEqual({ x: [0, 10], y: [-5, 5], z: [-2, 20], w: [-5, 5] });
+    expect(back.settings.vf).toEqual({ step: 0.5, len: "unit", mag: false, style: "both", by: "size" });
     expect(back.rows.find((r) => r.vf)?.vf.step).toBe(2);
   });
   it("rejects hostile values", () => {
     const d = sanitize({
       rows: [{ latex: "x", vf: { step: -3, len: "evil", style: 5 }, tmin: "a" }],
-      mode: "4d",
+      mode: "9d",
       settings: { box: { x: [3, 1], y: [0, 1e12], z: [-1, 1] }, opacity3: -1, vf: { step: 0 } },
       view3: { p: [1, 2, "x"], t: [0, 0, 0] },
       stash: { "3d": "nope" },
     });
     expect(d.mode).toBe("2d");
-    expect(d.settings.box).toEqual({ x: [-5, 5], y: [-5, 5], z: [-1, 1] }); // bad axes fall back, good ones are kept
+    expect(d.settings.box).toEqual({ x: [-5, 5], y: [-5, 5], z: [-1, 1], w: [-5, 5] }); // bad axes fall back, good ones are kept
     expect(d.settings.opacity3).toBe(1);
     expect(d.settings.vf.step).toBe(1);
     expect(d.view3).toBeNull();

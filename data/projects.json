@@ -12,7 +12,7 @@
     "category": "mini",
     "kind": "Web App",
     "status": "In Development",
-    "description": "A single-page graphing calculator: type math like on paper, drag sliders, plot curves and inequalities in 2D and surfaces, space curves and implicit surfaces in 3D, draw vector fields with arrows or streamlines at a chosen spacing, and get exact derivatives, integrals, gradients, divergence and curl. 4D slicing is planned.",
+    "description": "A single-page graphing calculator: type math like on paper, drag sliders, plot curves and inequalities in 2D and surfaces, space curves and implicit surfaces in 3D, draw vector fields with arrows or streamlines at a chosen spacing, and explore 4D shapes as 3D slices with a w slider and 4D rotation, and get exact derivatives, integrals, gradients, divergence and curl.",
     "path": "mini-proj/better-desmos/"
   }
 ]

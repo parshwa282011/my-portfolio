@@ -30,7 +30,7 @@ export function referenceMagnitude(mags) {
   return v[Math.min(v.length - 1, Math.floor(v.length * 0.9))];
 }
 
-export const DEFAULT_VF = { step: 1, len: "scaled", mag: true, style: "arrows" };
+export const DEFAULT_VF = { step: 1, len: "scaled", mag: true, style: "arrows", by: "size" };
 
 export function vfOptions(globalVF, rowVF) {
   const o = { ...DEFAULT_VF, ...(globalVF || {}), ...(rowVF || {}) };

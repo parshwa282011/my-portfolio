@@ -14,6 +14,7 @@ import { simplify } from "./simplify.js";
 
 export const RESERVED = new Set(["x", "y", "r", "theta", "t"]);
 const RESERVED_3D = new Set(["x", "y", "z", "t", "u", "v"]);
+const RESERVED_4D = new Set(["x", "y", "z", "w", "t", "u", "v"]);
 const TWO_PI = 2 * Math.PI;
 
 const has = (ast, name) => freeSymbols(ast).has(name);
@@ -33,7 +34,7 @@ function variableDef(ast, reserved) {
   if (!isSym(lhs) || reserved.has(lhs) || lhs in CONSTANTS) return null;
   if (isArr(rhs) && rhs[0] === "$Vec") return null; // named vector field, not a number
   const fs = freeSymbols(rhs);
-  if (fs.has("x") || fs.has("y") || fs.has("z")) return null;
+  if (fs.has("x") || fs.has("y") || fs.has("z") || (reserved.has("w") && fs.has("w"))) return null;
   return { name: lhs, body: rhs };
 }
 
@@ -45,7 +46,7 @@ export function analyze(rows, { angle = "rad", P = {}, mode = "2d" } = {}) {
   const funcs = new Map();
   const vars = new Map();
   const ctx = { funcs, vars, angle, mode };
-  const reserved = mode === "3d" ? RESERVED_3D : RESERVED;
+  const reserved = mode === "4d" ? RESERVED_4D : mode === "3d" ? RESERVED_3D : RESERVED;
 
   // ---- pass 1: parse + collect definitions ----
   const parsed = rows.map((row) => {
@@ -99,7 +100,7 @@ export function analyze(rows, { angle = "rad", P = {}, mode = "2d" } = {}) {
         item.ast = expandNabla(item.ast, ctx); // ∇f, ∇·F, ∇×F, ∇²f
         item.nabla = true;
       }
-      const res = mode === "3d" ? classify3(item, ctx, build, row) : classify(item, ctx, build, row);
+      const res = mode === "4d" ? classify4(item, ctx, build, row) : mode === "3d" ? classify3(item, ctx, build, row) : classify(item, ctx, build, row);
       res.deps = [...deps];
       if (item.nabla) {
         res.calc = true;
@@ -124,6 +125,7 @@ export function analyze(rows, { angle = "rad", P = {}, mode = "2d" } = {}) {
     }
   }
 
+  if (mode === "4d") params.add("w"); // the slice position is always a slider
   return { results, params };
 }
 
@@ -237,13 +239,14 @@ function classify(item, ctx, build, row) {
 }
 
 // ------------------------------------------------------------------ vectors
-const VEC_ARGS = { 2: ["x", "y"], 3: ["x", "y", "z"] };
+const VEC_ARGS = { 2: ["x", "y"], 3: ["x", "y", "z"], 4: ["x", "y", "z", "w"] };
 
 // ast: ["$Vec"|"Tuple", ...comps]; dim = dimension of the space the field lives in
 function fieldResult(base, ast, name, dim, build) {
   const comps = ast.slice(1);
-  if (comps.length < 2 || comps.length > 3) throw new Error("A vector has 2 or 3 components");
+  if (comps.length < 2 || comps.length > 4) throw new Error("A vector has 2, 3 or 4 components");
   if (dim === 2 && comps.length === 3) throw new Error("3-component vectors need 3D mode");
+  if (comps.length === 4 && dim !== 4) throw new Error("4-component vectors need 4D mode");
   const args = VEC_ARGS[dim];
   const built = comps.map((c) => build(c, args));
   const zero = () => 0;
@@ -257,7 +260,8 @@ function fieldResult(base, ast, name, dim, build) {
     fx: built[0].fn,
     fy: built[1].fn,
     fz: built[2] ? built[2].fn : zero,
-    planar: comps.length === 2,
+    fw: built[3] ? built[3].fn : zero,
+    planar: comps.length === 2 && dim === 3,
   };
 }
 
@@ -389,4 +393,110 @@ function classify3(item, ctx, build, row) {
   }
   const v = build(ast, []);
   return { ...base, kind: "value", value: () => v.fn(), symAst: v.ast, approx: hasHead(ast, new Set(["$Int", "$Lim"])) };
+}
+
+// ------------------------------------------------------------------ 4D
+// 4D mode shows 3D slices (w is the slice position, a slider) of 4D objects.
+//   F(x,y,z,w) = 0          hypersurface, drawn as the slice at the current w
+//   (x(t), y(t), z(t), w(t)) curve, projected to 3D, coloured by w
+//   (x(u,v), y, z, w)       surface, projected
+//   ⟨P, Q, R, S⟩            field, shown on the slice
+// Anything that is already a 3D object (points, 3-component curves, ...) is classified
+// as in 3D mode, with w acting as one more slider.
+function classify4(item, ctx, build, row) {
+  const { ast } = item;
+  const id = row.id;
+  const base = { id, status: "ok", calc: hasHead(ast, CALCULUS) };
+  const head = isArr(ast) ? ast[0] : null;
+  if (item.def) return classify3(item, ctx, build, row);
+
+  const S = freeSymbols(inline(ast, ctx));
+  const hasS = (n) => S.has(n);
+  const spatial = hasS("x") || hasS("y") || hasS("z") || hasS("w");
+  const XYZW = VEC_ARGS[4];
+
+  if (head === "$Vec" || (head === "Equal" && isSym(ast[1]) && isArr(ast[2]) && ast[2][0] === "$Vec")) {
+    const named = head === "Equal";
+    return fieldResult(base, named ? ast[2] : ast, named ? ast[1] : null, 4, build);
+  }
+
+  if (head === "Tuple") {
+    const n = ast.length - 1;
+    if (n === 4) {
+      if (hasS("t")) {
+        const b = ast.slice(1).map((c) => build(c, ["t"]));
+        return { ...base, kind: "curve4", f4: (t) => b.map((x) => x.fn(t)), range: [row.tmin ?? 0, row.tmax ?? TWO_PI] };
+      }
+      if (hasS("u") || hasS("v")) {
+        const b = ast.slice(1).map((c) => build(c, ["u", "v"]));
+        return {
+          ...base,
+          kind: "psurface4",
+          f4: (u, v) => b.map((x) => x.fn(u, v)),
+          urange: [row.umin ?? 0, row.umax ?? TWO_PI],
+          vrange: [row.vmin ?? 0, row.vmax ?? TWO_PI],
+        };
+      }
+      if (spatial) return fieldResult(base, ast, null, 4, build);
+      const b = ast.slice(1).map((c) => build(c, []));
+      return { ...base, kind: "point4", f4: () => b.map((x) => x.fn()) };
+    }
+    if (!hasS("t") && !hasS("u") && !hasS("v") && spatial) return fieldResult(base, ast, null, 4, build);
+    return classify3(item, ctx, build, row);
+  }
+
+  if (head === "List") {
+    const pts = ast.slice(1);
+    if (pts.length && pts.every((p) => isArr(p) && p[0] === "Tuple" && p.length === 5)) {
+      const items = pts.map((p) => {
+        const b = p.slice(1).map((c) => build(c, []));
+        return () => b.map((x) => x.fn());
+      });
+      return { ...base, kind: "points4", items };
+    }
+    return classify3(item, ctx, build, row);
+  }
+
+  if (INEQ.has(head)) throw new Error("Inequalities are drawn in 2D mode only");
+
+  const axes = { z: ["x", "y"], y: ["x", "z"], x: ["y", "z"] };
+  if (head === "Equal") {
+    let [, l, r] = ast;
+    if (isSym(r) && !isSym(l) && XYZW.includes(r)) [l, r] = [r, l];
+    if (l === "r") throw new Error("Polar equations are drawn in 2D mode");
+    const F = ["Subtract", l, r];
+    const fs = freeSymbols(inline(F, ctx));
+    if (!XYZW.some((v) => fs.has(v))) throw new Error("This equation has no x, y, z or w to graph");
+    const fn4 = build(F, XYZW).fn;
+    const res = { ...base, kind: "implicit4", fn4, scalarAst: inline(F, ctx), eq: [inline(l, ctx), inline(r, ctx)] };
+    if (typeof l === "string" && axes[l] && !has(r, l)) {
+      // z = f(x,y,w) and friends: a heightfield is much better than marching cubes
+      res.surface = { axis: l, args: axes[l], fn: build(r, axes[l]).fn };
+    }
+    return res;
+  }
+
+  if (hasS("z") || hasS("w")) {
+    const b = build(ast, XYZW);
+    return {
+      ...base,
+      kind: "multivar",
+      symAst: b.ast,
+      scalarAst: b.ast,
+      hint: "A function of x, y, z (and w). Set it equal to a number (f = 1) to draw that hypersurface, or use ∇f.",
+    };
+  }
+  if (hasS("x") || hasS("y")) {
+    const surf = build(ast, ["x", "y"]);
+    const fn4 = build(["Subtract", "z", ast], XYZW).fn;
+    return {
+      ...base,
+      kind: "implicit4",
+      fn4,
+      symAst: surf.ast,
+      scalarAst: surf.ast,
+      surface: { axis: "z", args: ["x", "y"], fn: surf.fn },
+    };
+  }
+  return classify3(item, ctx, build, row);
 }

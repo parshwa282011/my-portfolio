@@ -16,9 +16,9 @@ export const DEFAULT_SETTINGS = {
   grid: true,
   axes: true,
   labels: true,
-  box: { x: [-5, 5], y: [-5, 5], z: [-5, 5] }, // the 3D window, per axis
+  box: { x: [-5, 5], y: [-5, 5], z: [-5, 5], w: [-5, 5] }, // the 3D / 4D window, per axis (w: range of the slice slider)
   opacity3: 1,
-  vf: { step: 1, len: "scaled", mag: true, style: "arrows" },
+  vf: { step: 1, len: "scaled", mag: true, style: "arrows", by: "size" },
 };
 
 export const BOX_PRESETS = [2, 3, 5, 10, 20, 50, 100]; // ±N on every axis
@@ -42,6 +42,14 @@ export function exampleRows(mode) {
       ["x^2+y^2+z^2=9", { visible: false }],
       ["\\frac{\\partial}{\\partial x}\\left(x^2y\\right)", { visible: false }],
     ],
+    // w is the slice: drag the w slider, or rotate the slice through the 4th dimension
+    "4d": [
+      ["x^2+y^2+z^2+w^2=9"],
+      ["\\left(3\\cos t,3\\sin t,3\\cos\\left(2t\\right),3\\sin\\left(2t\\right)\\right)"],
+      ["\\left(2\\cos u,2\\sin u,2\\cos v,2\\sin v\\right)", { visible: false }],
+      ["w=x^2+y^2-z^2", { visible: false }],
+      ["\\left\\langle -y,x,-w,z\\right\\rangle", { visible: false, vf: { step: 2, by: "w" } }],
+    ],
   };
   const rows = [];
   for (const [latex, extra] of sets[mode]) rows.push({ ...newRow({ rows }, latex), ...(extra || {}) });
@@ -55,6 +63,7 @@ export function defaultDoc() {
     settings: cloneSettings(DEFAULT_SETTINGS),
     view: { cx: 0, cy: 0, scale: 50 },
     view3: null, // 3D camera {p:[x,y,z], t:[x,y,z]}
+    view4: { rot: [0, 0, 0], proj: "ortho" }, // 4D: rotation in the xw, yw, zw planes (degrees) and projection
     rows: exampleRows("2d"),
     stash: {}, // rows of the mode that is not currently active
     sliders: {
@@ -67,13 +76,15 @@ export function defaultDoc() {
 const isNum = (n) => typeof n === "number" && Number.isFinite(n);
 
 function cloneSettings(s) {
-  return { ...s, vf: { ...s.vf }, box: { x: [...s.box.x], y: [...s.box.y], z: [...s.box.z] } };
+  return { ...s, vf: { ...s.vf }, box: { x: [...s.box.x], y: [...s.box.y], z: [...s.box.z], w: [...s.box.w] } };
 }
 
 // A usable axis range: finite, ordered, not absurdly large or thin.
 const goodRange = (r) => Array.isArray(r) && r.length === 2 && r.every(isNum) && r[0] < r[1] && r[1] - r[0] >= 1e-3 && Math.abs(r[0]) <= 1e6 && Math.abs(r[1]) <= 1e6;
 const VF_LEN = new Set(["scaled", "unit"]);
 const VF_STYLE = new Set(["arrows", "stream", "both"]);
+const VF_BY = new Set(["size", "w"]);
+const MODES = ["2d", "3d", "4d"];
 
 function cleanVF(v, fallback = {}) {
   const out = { ...fallback };
@@ -82,6 +93,7 @@ function cleanVF(v, fallback = {}) {
   if (VF_LEN.has(v.len)) out.len = v.len;
   if (typeof v.mag === "boolean") out.mag = v.mag;
   if (VF_STYLE.has(v.style)) out.style = v.style;
+  if (VF_BY.has(v.by)) out.by = v.by;
   return out;
 }
 
@@ -110,10 +122,11 @@ export function sanitize(raw) {
   const base = defaultDoc();
   const doc = {
     v: 1,
-    mode: raw.mode === "3d" ? "3d" : "2d",
+    mode: MODES.includes(raw.mode) ? raw.mode : "2d",
     settings: cloneSettings(base.settings),
     view: { ...base.view },
     view3: null,
+    view4: { rot: [0, 0, 0], proj: "ortho" },
     rows: [],
     stash: {},
     sliders: {},
@@ -123,9 +136,9 @@ export function sanitize(raw) {
   for (const k of ["grid", "axes", "labels"]) if (typeof s[k] === "boolean") doc.settings[k] = s[k];
   if (isNum(s.range3) && s.range3 >= 0.5 && s.range3 <= 10000) {
     // older documents: one symmetric range for all three axes
-    doc.settings.box = { x: [-s.range3, s.range3], y: [-s.range3, s.range3], z: [-s.range3, s.range3] };
+    doc.settings.box = { x: [-s.range3, s.range3], y: [-s.range3, s.range3], z: [-s.range3, s.range3], w: [-s.range3, s.range3] };
   }
-  if (s.box && typeof s.box === "object") for (const k of ["x", "y", "z"]) if (goodRange(s.box[k])) doc.settings.box[k] = [...s.box[k]];
+  if (s.box && typeof s.box === "object") for (const k of ["x", "y", "z", "w"]) if (goodRange(s.box[k])) doc.settings.box[k] = [...s.box[k]];
   if (isNum(s.opacity3) && s.opacity3 >= 0.1 && s.opacity3 <= 1) doc.settings.opacity3 = s.opacity3;
   doc.settings.vf = cleanVF(s.vf, doc.settings.vf);
   const v = raw.view || {};
@@ -134,10 +147,16 @@ export function sanitize(raw) {
   if (v3 && Array.isArray(v3.p) && Array.isArray(v3.t) && v3.p.length === 3 && v3.t.length === 3 && [...v3.p, ...v3.t].every(isNum)) {
     doc.view3 = { p: [...v3.p], t: [...v3.t] };
   }
+  const v4 = raw.view4;
+  if (v4 && typeof v4 === "object") {
+    if (Array.isArray(v4.rot) && v4.rot.length === 3 && v4.rot.every((a) => isNum(a) && Math.abs(a) <= 720)) doc.view4.rot = [...v4.rot];
+    if (v4.proj === "persp" || v4.proj === "ortho") doc.view4.proj = v4.proj;
+  }
   const seen = new Set();
   doc.rows = cleanRows(raw.rows, seen);
-  const other = doc.mode === "3d" ? "2d" : "3d";
-  if (raw.stash && Array.isArray(raw.stash[other])) doc.stash[other] = cleanRows(raw.stash[other], seen);
+  for (const other of MODES) {
+    if (other !== doc.mode && raw.stash && Array.isArray(raw.stash[other])) doc.stash[other] = cleanRows(raw.stash[other], seen);
+  }
   if (raw.sliders && typeof raw.sliders === "object") {
     for (const [name, sl] of Object.entries(raw.sliders).slice(0, 100)) {
       if (!sl || !isNum(sl.value) || !isNum(sl.min) || !isNum(sl.max) || !isNum(sl.step)) continue;

@@ -55,7 +55,7 @@ const INSERTS = [
   ["θ", "\\theta", "Theta"],
   ["(x,y)", "\\left(#?,#?\\right)", "Point"],
   ["∇", "\\nabla #?", "Gradient ∇f(x,y,z), divergence ∇·F, curl ∇×F, Laplacian ∇²f"],
-  ["⟨ ⟩", (mode) => (mode === "3d" ? "\\left\\langle #?,#?,#?\\right\\rangle" : "\\left\\langle #?,#?\\right\\rangle"), "Vector field  ⟨P, Q⟩ — drawn as arrows"],
+  ["⟨ ⟩", (mode) => (mode === "4d" ? "\\left\\langle #?,#?,#?,#?\\right\\rangle" : mode === "3d" ? "\\left\\langle #?,#?,#?\\right\\rangle" : "\\left\\langle #?,#?\\right\\rangle"), "Vector field  ⟨P, Q⟩ — drawn as arrows"],
 ];
 
 export function startApp(root) {
@@ -89,6 +89,7 @@ export function startApp(root) {
         <div class="seg" role="group" aria-label="Dimension">
           <button type="button" data-act="mode" data-mode="2d">2D</button>
           <button type="button" data-act="mode" data-mode="3d">3D</button>
+          <button type="button" data-act="mode" data-mode="4d" title="3D slices of 4D shapes: a w slider and 4D rotation">4D</button>
         </div>
         <button class="icon-btn" data-act="settings" title="Settings" aria-label="Settings">⚙</button>
       </header>
@@ -118,6 +119,27 @@ export function startApp(root) {
         <button class="icon-btn only3d" data-act="spin" aria-label="Auto-rotate" title="Auto-rotate">↻</button>
       </div>
       <div class="gl-note" hidden></div>
+      <div class="four-bar" hidden>
+        <div class="fb-row">
+          <span class="fb-name">w</span>
+          <input type="range" data-fb="w" aria-label="w slice position" />
+          <input class="num" type="number" step="any" data-fb="wnum" aria-label="w value" />
+          <button type="button" class="icon-btn" data-fb="wplay" title="Animate w">▶</button>
+        </div>
+        <details class="fb-rot">
+          <summary>Rotate in 4D</summary>
+          <div class="fb-row"><span class="fb-name">xw</span><input type="range" min="-180" max="180" step="1" data-rot="0" aria-label="rotate xw" /><output></output><button type="button" class="icon-btn" data-rotplay="0" title="Spin">▶</button></div>
+          <div class="fb-row"><span class="fb-name">yw</span><input type="range" min="-180" max="180" step="1" data-rot="1" aria-label="rotate yw" /><output></output><button type="button" class="icon-btn" data-rotplay="1" title="Spin">▶</button></div>
+          <div class="fb-row"><span class="fb-name">zw</span><input type="range" min="-180" max="180" step="1" data-rot="2" aria-label="rotate zw" /><output></output><button type="button" class="icon-btn" data-rotplay="2" title="Spin">▶</button></div>
+          <div class="fb-row foot">
+            <select data-fb="proj" class="mini-select" aria-label="Projection for curves and surfaces">
+              <option value="ortho">orthographic</option>
+              <option value="persp">perspective</option>
+            </select>
+            <button type="button" class="chip small" data-fb="rotreset">Reset rotation</button>
+          </div>
+        </details>
+      </div>
       <div class="engine-pill" hidden></div>
     </main>
     <dialog class="settings">
@@ -138,6 +160,7 @@ export function startApp(root) {
             <label class="ax" for="box-x0">x</label><input class="num" type="number" step="any" id="box-x0" data-box="x0" /><input class="num" type="number" step="any" data-box="x1" aria-label="x to" />
             <label class="ax" for="box-y0">y</label><input class="num" type="number" step="any" id="box-y0" data-box="y0" /><input class="num" type="number" step="any" data-box="y1" aria-label="y to" />
             <label class="ax" for="box-z0">z</label><input class="num" type="number" step="any" id="box-z0" data-box="z0" /><input class="num" type="number" step="any" data-box="z1" aria-label="z to" />
+            <label class="ax only4" for="box-w0">w</label><input class="num only4" type="number" step="any" id="box-w0" data-box="w0" /><input class="num only4" type="number" step="any" data-box="w1" aria-label="w to" />
           </div>
           <label>Preset (same on every axis)
             <select data-set="boxpreset"></select>
@@ -200,10 +223,11 @@ export function startApp(root) {
     view: doc.view,
     onViewChange: () => saveSoon(),
   });
-  const invalidate = () => (doc.mode === "3d" ? graph3?.invalidate() : graph.invalidate());
+  const invalidate = () => (doc.mode !== "2d" ? graph3?.invalidate() : graph.invalidate());
+  const settings3 = () => ({ ...doc.settings, mode4: doc.mode === "4d", view4: doc.view4 });
   const pushSettings = () => {
     graph.setSettings(doc.settings);
-    graph3?.setSettings(doc.settings);
+    graph3?.setSettings(settings3());
   };
 
   // ------------------------------------------------------------------ helpers
@@ -402,7 +426,7 @@ export function startApp(root) {
 
   function pushItems() {
     const items = doc.rows.map((row) => ({ row, result: results.get(row.id) })).filter((i) => i.result);
-    if (doc.mode === "3d") graph3?.setItems(items);
+    if (doc.mode !== "2d") graph3?.setItems(items);
     else graph.setItems(items);
   }
 
@@ -412,7 +436,12 @@ export function startApp(root) {
 
     // Reconcile sliders with the free parameters discovered in the rows.
     for (const name of out.params) {
-      if (!doc.sliders[name]) doc.sliders[name] = { value: 1, min: -10, max: 10, step: 0.1 };
+      if (!doc.sliders[name]) {
+        doc.sliders[name] =
+          name === "w" && doc.mode === "4d"
+            ? { value: 0, min: doc.settings.box.w[0], max: doc.settings.box.w[1], step: 0.05 }
+            : { value: 1, min: -10, max: 10, step: 0.1 };
+      }
       P[name] = doc.sliders[name].value;
     }
     const names = [...out.params].sort();
@@ -421,6 +450,7 @@ export function startApp(root) {
       paramKey = key;
       renderParams(names);
     }
+    syncFourBar();
 
     for (const row of doc.rows) updateRowUI(row);
     pushItems();
@@ -449,11 +479,11 @@ export function startApp(root) {
     }
     updateLiveValue(row.id);
 
-    if (res.kind === "parametric" || res.kind === "polar" || res.kind === "curve3") {
+    if (res.kind === "parametric" || res.kind === "polar" || res.kind === "curve3" || res.kind === "curve4") {
       st.rangeBox.hidden = false;
       const sym = res.kind === "polar" ? "θ" : "t";
       st.rangeBox.replaceChildren(...rangeInputs(sym, res.range, row, "tmin", "tmax"));
-    } else if (res.kind === "psurface") {
+    } else if (res.kind === "psurface" || res.kind === "psurface4") {
       st.rangeBox.hidden = false;
       st.rangeBox.replaceChildren(
         ...rangeInputs("u", res.urange, row, "umin", "umax"),
@@ -489,7 +519,7 @@ export function startApp(root) {
     const opBtn = (label, title, fn) => add(label, title, fn);
     if (res.kind === "field") {
       opBtn("∇·F", "Divergence", () => runOp(row, res, "div"));
-      opBtn("∇×F", res.comps.length === 3 ? "Curl (a vector)" : "Curl (a scalar, ∂Q/∂x − ∂P/∂y)", () => runOp(row, res, "curl"));
+      if (res.comps.length < 4) opBtn("∇×F", res.comps.length === 3 ? "Curl (a vector)" : "Curl (a scalar, ∂Q/∂x − ∂P/∂y)", () => runOp(row, res, "curl"));
     } else if (res.scalarAst) {
       opBtn("∇f", "Gradient: add it as a vector field", () => runOp(row, res, "grad"));
     }
@@ -545,7 +575,9 @@ export function startApp(root) {
     if (doc.mode === "2d") out.push(select([["arrows", "arrows"], ["stream", "streamlines"], ["both", "both"]], vf.style, (v) => set("style", v), "Field style"));
     const mag = el("input", { type: "checkbox", checked: vf.mag });
     mag.addEventListener("change", () => set("mag", mag.checked));
-    out.push(el("label", { className: "check inline" }, mag, document.createTextNode(" colour by size")));
+    out.push(el("label", { className: "check inline" }, mag, document.createTextNode(" colour by")));
+    if (doc.mode === "4d") out.push(select([["size", "size"], ["w", "w-direction"]], vf.by, (v) => set("by", v), "Colour arrows by"));
+    else out.push(el("span", { textContent: "size" }));
     if (res.planar && doc.mode === "3d") out.push(el("span", { className: "note", textContent: "drawn in the z = 0 plane" }));
     return out;
   }
@@ -579,7 +611,12 @@ export function startApp(root) {
       if (op === "grad") {
         const syms = new Set();
         collectSymbols(res.scalarAst, syms);
-        const vars = doc.mode === "3d" && (res.kind === "implicit3" || syms.has("z")) ? ["x", "y", "z"] : ["x", "y"];
+        const vars =
+          syms.has("w") || (doc.mode === "4d" && res.kind === "implicit4")
+            ? ["x", "y", "z", "w"]
+            : doc.mode !== "2d" && (res.kind === "implicit3" || res.kind === "implicit4" || syms.has("z"))
+              ? ["x", "y", "z"]
+              : ["x", "y"];
         const g = gradient(res.scalarAst, vars);
         list = [{ label: "∇f", latex: toLatex(["$Vec", ...g]), add: { text: "Add as field", title: "Add as a new vector field", latex: toLatex(["$Vec", ...g]) } }];
       } else if (op === "div") {
@@ -713,7 +750,7 @@ export function startApp(root) {
         if (canPlot(out, latex)) {
           const b = el("button", { className: "chip small", type: "button", textContent: "Plot", title: "Add as a new row" });
           b.addEventListener("click", () => {
-            const eq = out.op === "solve" ? `${out.prefix}${latex}` : `${doc.mode === "3d" ? "z" : "y"}=${latex}`;
+            const eq = out.op === "solve" ? `${out.prefix}${latex}` : `${doc.mode !== "2d" ? "z" : "y"}=${latex}`;
             addRow(eq, row.id);
           });
           nodes.push(b);
@@ -726,9 +763,9 @@ export function startApp(root) {
   }
 
   const canPlot = (out, latex) => {
-    const three = doc.mode === "3d";
+    const three = doc.mode !== "2d";
     if (out.op === "solve") {
-      const ok = three ? ["x", "y", "z"] : ["x", "y"];
+      const ok = doc.mode === "4d" ? ["x", "y", "z", "w"] : three ? ["x", "y", "z"] : ["x", "y"];
       return out.free.every((s) => ok.includes(s) && s !== out.variable) && !/\\mathrm\{i\}|\bi\b/.test(latex) && out.free.length > 0;
     }
     return out.free.length > 0 && out.free.every((s) => (three ? s === "x" || s === "y" : s === "x"));
@@ -775,6 +812,7 @@ export function startApp(root) {
           if (document.activeElement !== val) val.value = String(Number(v.toPrecision(8)));
           invalidate();
           updateLiveValues();
+          if (name === "w") syncFourBar();
           saveSoon();
         };
         range.addEventListener("input", () => apply(Number(range.value)));
@@ -853,7 +891,7 @@ export function startApp(root) {
     // the preset shows a value only when all three axes are the same ±R
     const { x, y, z } = doc.settings.box;
     const R = x[1];
-    const sym = [x, y, z].every((r) => r[0] === -R && r[1] === R) ? R : "";
+    const sym = [x, y, z, doc.settings.box.w].every((r) => r[0] === -R && r[1] === R) ? R : "";
     const sel = $("[data-set=boxpreset]", dialog);
     sel.replaceChildren(el("option", { value: "", textContent: "custom" }), ...BOX_PRESETS.map((v) => el("option", { value: String(v), textContent: `±${v}` })));
     sel.value = String(sym);
@@ -880,10 +918,11 @@ export function startApp(root) {
     } else if (key === "boxpreset") {
       const R = Number(t.value);
       if (R > 0) {
-        doc.settings.box = { x: [-R, R], y: [-R, R], z: [-R, R] };
+        doc.settings.box = { x: [-R, R], y: [-R, R], z: [-R, R], w: [-R, R] };
         syncBoxUI();
         pushSettings();
         graph3?.resetView();
+        syncWSlider();
       }
     } else if (t.dataset.box) {
       const [axis, end] = [t.dataset.box[0], Number(t.dataset.box[1])];
@@ -895,6 +934,7 @@ export function startApp(root) {
         pushSettings();
         graph3?.resetView();
         syncBoxUI();
+        syncWSlider();
       } else {
         toast("Each axis needs a start below its end");
         syncBoxUI();
@@ -928,7 +968,7 @@ export function startApp(root) {
       case "zoom-in":
       case "zoom-out": {
         const f = btn.dataset.act === "zoom-in" ? 1.5 : 1 / 1.5;
-        if (doc.mode === "3d") graph3?.zoom(f);
+        if (doc.mode !== "2d") graph3?.zoom(f);
         else {
           graph.view.zoomAt(graph.view.w / 2, graph.view.h / 2, f);
           graph.invalidate();
@@ -937,7 +977,7 @@ export function startApp(root) {
         break;
       }
       case "reset":
-        if (doc.mode === "3d") graph3?.resetView();
+        if (doc.mode !== "2d") graph3?.resetView();
         else graph.resetView();
         break;
       case "spin":
@@ -964,7 +1004,7 @@ export function startApp(root) {
         $("[data-role=file]", root).click();
         break;
       case "png": {
-        const blob = await (doc.mode === "3d" && graph3 ? graph3.toBlob() : graph.toBlob());
+        const blob = await (doc.mode !== "2d" && graph3 ? graph3.toBlob() : graph.toBlob());
         if (blob) download(blob, "graph.png");
         break;
       }
@@ -1020,6 +1060,117 @@ export function startApp(root) {
     if (graph3) doc.view3 = graph3.getView();
   }
 
+  // ------------------------------------------------------------------ 4D controls
+  const fourBar = $(".four-bar", root);
+  const rotSpin = [false, false, false];
+  let rotRaf = 0;
+  let rotLast = 0;
+  const push3 = () => graph3?.setSettings(settings3());
+
+  function syncFourBar() {
+    fourBar.hidden = doc.mode !== "4d";
+    if (doc.mode !== "4d") return;
+    const s = doc.sliders.w;
+    const wr = $("[data-fb=w]", fourBar);
+    const wnum = $("[data-fb=wnum]", fourBar);
+    if (s) {
+      wr.min = s.min;
+      wr.max = s.max;
+      wr.step = s.step;
+      wr.value = s.value;
+      if (document.activeElement !== wnum) wnum.value = String(Number(s.value.toPrecision(5)));
+    }
+    $("[data-fb=wplay]", fourBar).textContent = animating?.name === "w" ? "❚❚" : "▶";
+    fourBar.querySelectorAll("[data-rot]").forEach((r) => {
+      const i = Number(r.dataset.rot);
+      r.value = doc.view4.rot[i];
+      r.nextElementSibling.textContent = `${Math.round(doc.view4.rot[i])}°`;
+      r.parentElement.querySelector("[data-rotplay]").textContent = rotSpin[i] ? "❚❚" : "▶";
+    });
+    $("[data-fb=proj]", fourBar).value = doc.view4.proj;
+  }
+
+  const setW = (v) => {
+    if (!Number.isFinite(v)) return;
+    const wrap = paramList.querySelector('[data-name="w"]');
+    if (wrap) wrap._apply(v);
+    else if (doc.sliders.w) {
+      doc.sliders.w.value = v;
+      P.w = v;
+      invalidate();
+    }
+  };
+
+  // keep the w slider's range equal to the w range in Settings
+  function syncWSlider() {
+    if (doc.mode !== "4d" || !doc.sliders.w) return;
+    const s = doc.sliders.w;
+    [s.min, s.max] = doc.settings.box.w;
+    s.value = Math.min(s.max, Math.max(s.min, s.value));
+    P.w = s.value;
+    paramKey = "";
+    refresh();
+    syncFourBar();
+  }
+
+  fourBar.addEventListener("input", (e) => {
+    const t = e.target;
+    if (t.dataset.fb === "w") setW(Number(t.value));
+    else if (t.dataset.fb === "wnum") setW(Number(t.value));
+    else if (t.dataset.rot !== undefined) {
+      doc.view4.rot[Number(t.dataset.rot)] = Number(t.value);
+      t.nextElementSibling.textContent = `${Math.round(Number(t.value))}°`;
+      push3();
+      saveSoon();
+    }
+  });
+  fourBar.addEventListener("change", (e) => {
+    if (e.target.dataset.fb === "proj") {
+      doc.view4.proj = e.target.value;
+      push3();
+      saveSoon();
+    }
+  });
+  fourBar.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.fb === "wplay") paramList.querySelector('[data-name="w"] .play')?.click();
+    else if (b.dataset.fb === "rotreset") {
+      rotSpin.fill(false);
+      doc.view4.rot = [0, 0, 0];
+      push3();
+      syncFourBar();
+      saveSoon();
+    } else if (b.dataset.rotplay !== undefined) {
+      const i = Number(b.dataset.rotplay);
+      rotSpin[i] = !rotSpin[i];
+      if (rotSpin.some(Boolean) && !rotRaf) {
+        rotLast = performance.now();
+        rotRaf = requestAnimationFrame(rotTick);
+      }
+      syncFourBar();
+    }
+  });
+
+  function rotTick(now) {
+    const dt = Math.min(0.1, (now - rotLast) / 1000);
+    rotLast = now;
+    if (!rotSpin.some(Boolean) || doc.mode !== "4d") {
+      rotRaf = 0;
+      return;
+    }
+    rotSpin.forEach((on, i) => {
+      if (!on) return;
+      let a = doc.view4.rot[i] + dt * 40;
+      if (a > 180) a -= 360;
+      doc.view4.rot[i] = a;
+    });
+    push3();
+    syncFourBar();
+    saveSoon();
+    rotRaf = requestAnimationFrame(rotTick);
+  }
+
   // ------------------------------------------------------------------ 2D / 3D
   let spinning = false;
 
@@ -1035,7 +1186,7 @@ export function startApp(root) {
           glNote.textContent = notes.join(" · ");
         },
       });
-      graph3.setSettings(doc.settings);
+      graph3.setSettings(settings3());
       return graph3;
     });
     try {
@@ -1047,7 +1198,7 @@ export function startApp(root) {
   }
 
   function applyModeUI() {
-    const three = doc.mode === "3d";
+    const three = doc.mode !== "2d";
     root.dataset.mode = doc.mode;
     for (const b of root.querySelectorAll("[data-act=mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === doc.mode));
     canvasEl.hidden = three;
@@ -1058,29 +1209,31 @@ export function startApp(root) {
     }
     document.title = `Better Desmos · ${doc.mode.toUpperCase()}`;
     refreshInsertBar();
+    syncFourBar();
     if (three) {
       pill.hidden = false;
       pill.textContent = graph3 ? "" : "Loading 3D…";
       ensureGraph3().then(
         (g) => {
-          if (doc.mode !== "3d") return;
+          if (doc.mode === "2d") return;
           pill.hidden = symbolic.status !== "loading";
           g.resize();
-          g.setSettings(doc.settings);
+          g.setSettings(settings3());
           pushItems();
         },
         () => {
           toast("3D needs WebGL, which this browser has turned off.");
           pill.hidden = true;
-          if (doc.mode === "3d") setMode("2d");
+          if (doc.mode !== "2d") setMode("2d");
         }
       );
     }
   }
 
   function setMode(next) {
-    if (next === doc.mode || (next !== "2d" && next !== "3d")) return;
+    if (next === doc.mode || !["2d", "3d", "4d"].includes(next)) return;
     stopAnimation();
+    rotSpin.fill(false);
     doc.stash = { ...(doc.stash || {}), [doc.mode]: doc.rows };
     doc.mode = next;
     doc.rows = doc.stash[next] || exampleRows(next);

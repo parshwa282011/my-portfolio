@@ -48,12 +48,12 @@ export function expandNabla(ast, ctx) {
   // "∇f" where f is a function name: call it with x, y, (z)
   if (isSym(arg) && ctx.funcs.has(arg)) {
     const n = ctx.funcs.get(arg).params.length;
-    arg = [arg, ...["x", "y", "z"].slice(0, n)];
+    arg = [arg, ...["x", "y", "z", "w"].slice(0, n)];
   }
   arg = inline(arg, ctx);
 
-  const three = ctx.mode === "3d" || freeSymbols(arg).has("z");
-  const vars = three ? ["x", "y", "z"] : ["x", "y"];
+  const free = freeSymbols(arg);
+  const vars = ctx.mode === "4d" || free.has("w") ? ["x", "y", "z", "w"] : ctx.mode === "3d" || free.has("z") ? ["x", "y", "z"] : ["x", "y"];
   const neg = (a) => (negated ? simplify(["Negate", a]) : a);
   const comps = isArr(arg) && (arg[0] === "$Vec" || arg[0] === "Tuple") ? arg.slice(1) : null;
 
@@ -67,9 +67,10 @@ export function expandNabla(ast, ctx) {
       return neg(simplify(["Add", ...vars.map((v) => diff(diff(arg, v), v))]));
     }
     if (!comps) throw new Error(`∇${op === "div" ? "·" : "×"} needs a vector, like ⟨P,Q,R⟩`);
-    if (comps.length < 2 || comps.length > 3) throw new Error("A vector has 2 or 3 components");
-    const vs = ["x", "y", "z"].slice(0, comps.length);
+    if (comps.length < 2 || comps.length > 4) throw new Error("A vector has 2, 3 or 4 components");
+    const vs = ["x", "y", "z", "w"].slice(0, comps.length);
     if (op === "div") return neg(divergence(comps, vs));
+    if (comps.length === 4) throw new Error("Curl needs 2 or 3 components");
     const c = curl(comps, vs);
     return comps.length === 3 ? ["$Vec", ...c.map(neg)] : neg(c);
   } catch (e) {
