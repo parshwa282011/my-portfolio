@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { analyze } from "../src/engine/analyze.js";
 import { diff } from "../src/engine/diff.js";
 import { gamma, erf, integrate, limit } from "../src/engine/runtime.js";
+import { toLatex } from "../src/engine/latex.js";
 
 const run = (latexRows, opts = {}) => {
   const P = opts.P ?? {};
@@ -144,7 +145,10 @@ describe("calculus", () => {
   });
   it("partial derivative with respect to x", () => {
     const r = one("\\frac{\\partial}{\\partial x}(x^2y)", {});
-    expect(r.status).toBe("error"); // y unsupported in explicit/value context
+    // a function of x and y: not drawable in 2D, but the derivative is computed
+    expect(r.status).toBe("ok");
+    expect(r.kind).toBe("multivar");
+    expect(toLatex(r.exact)).toBe("2xy");
   });
   it("derivative honours degrees", () => {
     expect(one("\\frac{d}{dx}\\sin x", { angle: "deg" }).fn(0)).toBeCloseTo(Math.PI / 180);

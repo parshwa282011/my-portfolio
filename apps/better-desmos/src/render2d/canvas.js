@@ -9,6 +9,8 @@ import {
   nearestOnSegments,
 } from "./geometry.js";
 import { explicitPOIs, intersections } from "./poi.js";
+import { drawArrows, drawStreamlines } from "./field2d.js";
+import { vfOptions } from "./colormap.js";
 
 const css = (el, name, fallback) => getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 
@@ -29,7 +31,8 @@ export class GraphCanvas {
     this.view = new View(view);
     this.onViewChange = onViewChange || (() => {});
     this.items = [];
-    this.settings = { grid: true, axes: true, labels: true };
+    this.settings = { grid: true, axes: true, labels: true, vf: null };
+    this.notes = [];
     this.hover = null;
     this.selectedId = null;
     this.pois = [];
@@ -201,7 +204,7 @@ export class GraphCanvas {
       else if (cache.pts) {
         for (const p of cache.pts) {
           const d = Math.hypot(px - p.px, py - p.py);
-          if (!hit || d < hit.dist) hit = { x: p.px, y: p.py, dist: d, wx: p.x, wy: p.y };
+          if (!hit || d < hit.dist) hit = { x: p.px, y: p.py, dist: d, wx: p.x, wy: p.y, label: p.label };
         }
       }
       if (hit && hit.dist <= maxDist && (!best || hit.dist < best.hit.dist)) best = { item, hit };
@@ -219,6 +222,7 @@ export class GraphCanvas {
           py: best.hit.y,
           x: best.hit.wx ?? this.view.wx(best.hit.x),
           y: best.hit.wy ?? this.view.wy(best.hit.y),
+          label: best.hit.label,
         }
       : null;
     const changed = (next?.px !== this.hover?.px || next?.py !== this.hover?.py) && (next || this.hover);
@@ -267,6 +271,7 @@ export class GraphCanvas {
     }
 
     // 2) curves and boundaries
+    this.notes = [];
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     for (const item of this.items) {
@@ -322,6 +327,18 @@ export class GraphCanvas {
             ctx.stroke();
           }
           item.cache = { pts };
+          break;
+        }
+        case "field": {
+          const vf = vfOptions(this.settings.vf, row.vf);
+          const hoverPts = [];
+          if (vf.style === "stream" || vf.style === "both") drawStreamlines(ctx, result, row.color, v, vf);
+          if (vf.style !== "stream") {
+            const out = drawArrows(ctx, result, row.color, v, vf);
+            hoverPts.push(...out.pts);
+            if (out.note) this.notes.push(out.note);
+          }
+          item.cache = { pts: hoverPts };
           break;
         }
         default:
@@ -441,6 +458,16 @@ export class GraphCanvas {
     const bg = css(el, "--graph-bg", "#ffffff");
     const text = css(el, "--graph-text", "#0f172a");
 
+    if (this.notes.length) {
+      ctx.font = "12px 'Space Grotesk', system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = text;
+      ctx.globalAlpha = 0.75;
+      this.notes.forEach((n, i) => ctx.fillText(`Field ${n}`, 14, v.h - 14 - i * 16));
+      ctx.globalAlpha = 1;
+    }
+
     const selected = this.items.find((i) => i.row.id === this.selectedId);
     this._labelRects = [];
     for (const p of this.pois) {
@@ -466,7 +493,7 @@ export class GraphCanvas {
       ctx.strokeStyle = bg;
       ctx.lineWidth = 2;
       ctx.stroke();
-      this._label(ctx, `(${fmt(h.x)}, ${fmt(h.y)})`, h.px, h.py, bg, text);
+      this._label(ctx, h.label ? `(${fmt(h.x)}, ${fmt(h.y)})  ${h.label}` : `(${fmt(h.x)}, ${fmt(h.y)})`, h.px, h.py, bg, text);
     }
   }
 

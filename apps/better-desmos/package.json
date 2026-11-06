@@ -16,6 +16,7 @@
   "dependencies": {
     "@cortex-js/compute-engine": "^0.181.1",
     "lz-string": "^1.5.0",
-    "mathlive": "^0.111.4"
+    "mathlive": "^0.111.4",
+    "three": "^0.187.0"
   }
 }

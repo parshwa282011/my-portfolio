@@ -3,8 +3,14 @@ import { MathfieldElement } from "mathlive";
 import { analyze } from "../engine/analyze.js";
 import { GraphCanvas } from "../render2d/canvas.js";
 import { Symbolic } from "../symbolic/bridge.js";
+import { toLatex } from "../engine/latex.js";
+import { divergence, curl, gradient } from "../engine/vector.js";
+import { vfOptions } from "../render2d/colormap.js";
 import {
   defaultDoc,
+  exampleRows,
+  RANGE3_OPTIONS,
+  VF_STEPS,
   newRow,
   loadLocal,
   saveLocal,
@@ -48,6 +54,7 @@ const INSERTS = [
   ["π", "\\pi", "Pi"],
   ["θ", "\\theta", "Theta"],
   ["(x,y)", "\\left(#?,#?\\right)", "Point"],
+  ["⟨ ⟩", (mode) => (mode === "3d" ? "\\left\\langle #?,#?,#?\\right\\rangle" : "\\left\\langle #?,#?\\right\\rangle"), "Vector field  ⟨P, Q⟩ — drawn as arrows"],
 ];
 
 export function startApp(root) {
@@ -68,6 +75,9 @@ export function startApp(root) {
   let animating = null; // { name, dir, last }
 
   const symbolic = new Symbolic();
+  let graph3 = null; // three.js view, loaded the first time 3D is used
+  let graph3Loading = null;
+  const opsResults = new Map(); // id -> [{ label, latex, add }] (div / curl / gradient)
 
   // ------------------------------------------------------------------ DOM
   root.innerHTML = `
@@ -75,15 +85,21 @@ export function startApp(root) {
       <header class="side-head">
         <a class="back" href="../../projects.html" title="Back to projects">← Projects</a>
         <h1>Better Desmos</h1>
+        <div class="seg" role="group" aria-label="Dimension">
+          <button type="button" data-act="mode" data-mode="2d">2D</button>
+          <button type="button" data-act="mode" data-mode="3d">3D</button>
+        </div>
         <button class="icon-btn" data-act="settings" title="Settings" aria-label="Settings">⚙</button>
       </header>
       <div class="insert-bar" role="toolbar" aria-label="Insert"></div>
-      <div class="rows" role="list"></div>
-      <button class="add-row" data-act="add">+ Add expression</button>
-      <section class="params" hidden>
-        <h2>Parameters</h2>
+      <div class="side-scroll">
+        <div class="rows" role="list"></div>
+        <button class="add-row" data-act="add">+ Add expression</button>
+      </div>
+      <details class="params" open hidden>
+        <summary>Parameters</summary>
         <div class="param-list"></div>
-      </section>
+      </details>
       <footer class="side-foot">
         <button class="chip" data-act="share" title="Copy a link to this graph">Share link</button>
         <button class="chip" data-act="export" title="Download as JSON">Export</button>
@@ -98,19 +114,14 @@ export function startApp(root) {
         <button class="icon-btn" data-act="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
         <button class="icon-btn" data-act="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
         <button class="icon-btn" data-act="reset" aria-label="Reset view" title="Reset view">⌂</button>
+        <button class="icon-btn only3d" data-act="spin" aria-label="Auto-rotate" title="Auto-rotate">↻</button>
       </div>
+      <div class="gl-note" hidden></div>
       <div class="engine-pill" hidden></div>
     </main>
     <dialog class="settings">
       <form method="dialog">
         <h2>Settings</h2>
-        <label class="field">Mode
-          <select data-set="mode">
-            <option value="2d">2D</option>
-            <option value="3d" disabled>3D (coming soon)</option>
-            <option value="4d" disabled>4D (coming soon)</option>
-          </select>
-        </label>
         <fieldset class="field">
           <legend>Angle unit</legend>
           <label><input type="radio" name="angle" value="rad" /> Radians</label>
@@ -119,6 +130,40 @@ export function startApp(root) {
         <label class="check"><input type="checkbox" data-set="grid" /> Grid</label>
         <label class="check"><input type="checkbox" data-set="axes" /> Axes</label>
         <label class="check"><input type="checkbox" data-set="labels" /> Axis labels</label>
+        <fieldset class="field group">
+          <legend>3D view</legend>
+          <label>Axis range ±
+            <select data-set="range3"></select>
+          </label>
+          <label>Surface opacity
+            <select data-set="opacity3">
+              <option value="1">Solid</option>
+              <option value="0.8">80%</option>
+              <option value="0.6">60%</option>
+              <option value="0.4">40%</option>
+            </select>
+          </label>
+        </fieldset>
+        <fieldset class="field group">
+          <legend>Vector fields (defaults)</legend>
+          <label>Arrow every
+            <select data-set="vf-step"></select>
+          </label>
+          <label>Arrow length
+            <select data-set="vf-len">
+              <option value="scaled">Proportional to size</option>
+              <option value="unit">All the same</option>
+            </select>
+          </label>
+          <label>2D style
+            <select data-set="vf-style">
+              <option value="arrows">Arrows</option>
+              <option value="stream">Streamlines</option>
+              <option value="both">Both</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" data-set="vf-mag" /> Colour by magnitude</label>
+        </fieldset>
         <label class="field">Theme
           <select data-set="theme">
             <option value="light">Light</option>
@@ -142,10 +187,17 @@ export function startApp(root) {
   const toastEl = $(".toast", root);
   const pill = $(".engine-pill", root);
 
+  const graphEl = $(".graph", root);
+  const glNote = $(".gl-note", root);
   const graph = new GraphCanvas(canvasEl, {
     view: doc.view,
     onViewChange: () => saveSoon(),
   });
+  const invalidate = () => (doc.mode === "3d" ? graph3?.invalidate() : graph.invalidate());
+  const pushSettings = () => {
+    graph.setSettings(doc.settings);
+    graph3?.setSettings(doc.settings);
+  };
 
   // ------------------------------------------------------------------ helpers
   let toastTimer = 0;
@@ -164,6 +216,7 @@ export function startApp(root) {
 
   function persist() {
     doc.view = graph.view.toJSON();
+    if (graph3) doc.view3 = graph3.getView();
     if (useHash) history.replaceState(null, "", shareUrl(doc));
     else saveLocal(doc);
   }
@@ -193,16 +246,17 @@ export function startApp(root) {
     const rangeBox = el("div", { className: "row-range", hidden: true });
     const actions = el("div", { className: "row-actions" });
     const result = el("div", { className: "row-result", hidden: true });
+    const auto = el("div", { className: "row-auto", hidden: true });
     const del = el("button", { className: "icon-btn del", title: "Delete", type: "button", textContent: "×" });
     del.setAttribute("aria-label", "Delete expression");
 
-    const main = el("div", { className: "row-main" }, mf, msg, rangeBox, actions, result);
+    const main = el("div", { className: "row-main" }, mf, msg, rangeBox, actions, auto, result);
     const left = el("div", { className: "row-left" }, handle, swatch, color);
     const rootEl = el("div", { className: "row" }, left, main, del);
     rootEl.dataset.id = row.id;
     rootEl.setAttribute("role", "listitem");
 
-    const state = { root: rootEl, mf, msg, actions, result, rangeBox, swatch, color, busy: false };
+    const state = { root: rootEl, mf, msg, actions, result, auto, rangeBox, swatch, color, busy: false };
     rowEls.set(row.id, state);
     paintSwatch(row, state);
 
@@ -224,6 +278,7 @@ export function startApp(root) {
     mf.addEventListener("input", () => {
       row.latex = mf.value;
       symResults.delete(row.id);
+      opsResults.delete(row.id);
       state.result.hidden = true;
       scheduleRefresh();
     });
@@ -324,6 +379,7 @@ export function startApp(root) {
     doc.rows = doc.rows.filter((r) => r.id !== id);
     rowEls.delete(id);
     symResults.delete(id);
+    opsResults.delete(id);
     if (!doc.rows.length) doc.rows.push(newRow(doc));
     renderRows();
     scheduleRefresh();
@@ -338,15 +394,13 @@ export function startApp(root) {
   };
 
   function pushItems() {
-    graph.setItems(
-      doc.rows
-        .map((row) => ({ row, result: results.get(row.id) }))
-        .filter((i) => i.result)
-    );
+    const items = doc.rows.map((row) => ({ row, result: results.get(row.id) })).filter((i) => i.result);
+    if (doc.mode === "3d") graph3?.setItems(items);
+    else graph.setItems(items);
   }
 
   function refresh() {
-    const out = analyze(doc.rows, { angle: doc.settings.angle, P });
+    const out = analyze(doc.rows, { angle: doc.settings.angle, P, mode: doc.mode });
     results = out.results;
 
     // Reconcile sliders with the free parameters discovered in the rows.
@@ -388,18 +442,26 @@ export function startApp(root) {
     }
     updateLiveValue(row.id);
 
-    if (res.kind === "parametric" || res.kind === "polar") {
+    if (res.kind === "parametric" || res.kind === "polar" || res.kind === "curve3") {
       st.rangeBox.hidden = false;
       const sym = res.kind === "polar" ? "θ" : "t";
-      const lo = numInput(res.range[0], (v) => setRange(row, "tmin", v));
-      const hi = numInput(res.range[1], (v) => setRange(row, "tmax", v));
+      st.rangeBox.replaceChildren(...rangeInputs(sym, res.range, row, "tmin", "tmax"));
+    } else if (res.kind === "psurface") {
+      st.rangeBox.hidden = false;
       st.rangeBox.replaceChildren(
-        el("span", { textContent: `${sym} from` }),
-        lo,
-        el("span", { textContent: "to" }),
-        hi
+        ...rangeInputs("u", res.urange, row, "umin", "umax"),
+        el("span", { className: "gap" }),
+        ...rangeInputs("v", res.vrange, row, "vmin", "vmax")
       );
+    } else if (res.kind === "field") {
+      st.rangeBox.hidden = false;
+      st.rangeBox.replaceChildren(...fieldControls(row, res));
+    } else if (res.kind === "multivar") {
+      st.msg.classList.add("note");
+      st.msg.textContent = res.hint;
     }
+
+    renderAuto(row, res);
 
     // symbolic actions
     const add = (label, title, fn, primary = false) => {
@@ -416,10 +478,18 @@ export function startApp(root) {
         add("Factor", "Factor", () => runSymbolic(row, "factor", res));
       }
     }
+    // gradient / divergence / curl
+    const opBtn = (label, title, fn) => add(label, title, fn);
+    if (res.kind === "field") {
+      opBtn("∇·F", "Divergence", () => runOp(row, res, "div"));
+      opBtn("∇×F", res.comps.length === 3 ? "Curl (a vector)" : "Curl (a scalar, ∂Q/∂x − ∂P/∂y)", () => runOp(row, res, "curl"));
+    } else if (res.scalarAst) {
+      opBtn("∇f", "Gradient: add it as a vector field", () => runOp(row, res, "grad"));
+    }
     if (res.eq) {
       const free = new Set();
       collectSymbols(res.eq, free);
-      for (const v of ["y", "x"]) {
+      for (const v of ["z", "y", "x"]) {
         if (free.has(v)) add(`Solve for ${v}`, `Solve the equation for ${v}`, () => runSolve(row, res, v));
       }
     }
@@ -432,6 +502,110 @@ export function startApp(root) {
     if (typeof ast === "string" && !ast.startsWith("'")) set.add(ast);
     else if (Array.isArray(ast)) ast.forEach((a) => collectSymbols(a, set));
   };
+
+  function rangeInputs(sym, range, row, kmin, kmax) {
+    return [
+      el("span", { textContent: `${sym} from` }),
+      numInput(range[0], (v) => setRange(row, kmin, v)),
+      el("span", { textContent: "to" }),
+      numInput(range[1], (v) => setRange(row, kmax, v)),
+    ];
+  }
+
+  function select(options, value, onChange, label) {
+    const sel = el("select", { className: "mini-select" });
+    sel.setAttribute("aria-label", label);
+    for (const [v, text] of options) sel.append(el("option", { value: String(v), textContent: text }));
+    if (![...sel.options].some((o) => o.value === String(value))) sel.prepend(el("option", { value: String(value), textContent: String(value) }));
+    sel.value = String(value);
+    sel.addEventListener("change", () => onChange(sel.value));
+    return sel;
+  }
+
+  // Per-row vector field options (fall back to the defaults in Settings).
+  function fieldControls(row, res) {
+    const vf = vfOptions(doc.settings.vf, row.vf);
+    const set = (key, value) => {
+      row.vf = { ...(row.vf || {}), [key]: value };
+      invalidate();
+      saveSoon();
+    };
+    const out = [
+      el("span", { textContent: "Arrow every" }),
+      select(VF_STEPS.map((v) => [v, String(v)]), vf.step, (v) => set("step", Number(v)), "Arrow spacing"),
+      select([["scaled", "size ∝ field"], ["unit", "equal length"]], vf.len, (v) => set("len", v), "Arrow length"),
+    ];
+    if (doc.mode === "2d") out.push(select([["arrows", "arrows"], ["stream", "streamlines"], ["both", "both"]], vf.style, (v) => set("style", v), "Field style"));
+    const mag = el("input", { type: "checkbox", checked: vf.mag });
+    mag.addEventListener("change", () => set("mag", mag.checked));
+    out.push(el("label", { className: "check inline" }, mag, document.createTextNode(" colour by size")));
+    if (res.planar && doc.mode === "3d") out.push(el("span", { className: "note", textContent: "drawn in the z = 0 plane" }));
+    return out;
+  }
+
+  const mathOut = (latex) => {
+    const mf = new MathfieldElement();
+    mf.readOnly = true;
+    mf.className = "mf result-mf";
+    applyMathTheme(mf);
+    mf.value = latex;
+    return mf;
+  };
+
+  function addAutoLine(st, label, latex, add) {
+    st.auto.hidden = false;
+    const line = el("div", { className: "auto-line" });
+    if (label) line.append(el("span", { className: "auto-label", textContent: label }));
+    line.append(mathOut(latex));
+    if (add) {
+      const b = el("button", { className: "chip small", type: "button", textContent: add.text, title: add.title });
+      b.addEventListener("click", add.fn);
+      line.append(b);
+    }
+    st.auto.append(line);
+  }
+
+  // ---- vector calculus on a row (all symbolic, instant)
+  function runOp(row, res, op) {
+    try {
+      let list;
+      if (op === "grad") {
+        const vars = doc.mode === "3d" && res.kind === "implicit3" ? ["x", "y", "z"] : ["x", "y"];
+        const g = gradient(res.scalarAst, vars);
+        list = [{ label: "∇f", latex: toLatex(["$Vec", ...g]), add: { text: "Add as field", title: "Add as a new vector field", latex: toLatex(["$Vec", ...g]) } }];
+      } else if (op === "div") {
+        const d = divergence(res.comps, res.vars);
+        list = [{ label: "∇·F", latex: toLatex(d), add: { text: "Plot", title: "Add as a new row", latex: toLatex(d) } }];
+      } else {
+        const c = curl(res.comps, res.vars);
+        list = res.comps.length === 3
+          ? [{ label: "∇×F", latex: toLatex(["$Vec", ...c]), add: { text: "Add as field", title: "Add as a new vector field", latex: toLatex(["$Vec", ...c]) } }]
+          : [{ label: "∇×F", latex: toLatex(c), add: { text: "Plot", title: "Add as a new row", latex: toLatex(c) } }];
+      }
+      const keep = (opsResults.get(row.id) || []).filter((o) => !o.error && !list.some((n) => n.label === o.label));
+      opsResults.set(row.id, [...keep, ...list]);
+    } catch (e) {
+      opsResults.set(row.id, [{ error: e.message || "Could not compute that" }]);
+    }
+    renderAuto(row, res);
+  }
+
+  // Results that need no SymPy: a derivative's closed form (∂/∂x (x²y) = 2xy) and
+  // the gradient / divergence / curl buttons.
+  function renderAuto(row, res) {
+    const st = rowEls.get(row.id);
+    st.auto.replaceChildren();
+    st.auto.hidden = true;
+    if (res.exact !== undefined) addAutoLine(st, "=", toLatex(res.exact));
+    for (const o of opsResults.get(row.id) || []) {
+      if (o.error) {
+        st.auto.hidden = false;
+        st.auto.append(el("div", { className: "auto-line error", textContent: o.error }));
+        continue;
+      }
+      addAutoLine(st, `${o.label} =`, o.latex, o.add && { text: o.add.text, title: o.add.title, fn: () => addRow(o.add.latex, row.id) });
+    }
+  }
 
   function numInput(value, onChange) {
     const input = el("input", { type: "number", className: "num", value: String(Number(value.toPrecision(8))), step: "any" });
@@ -530,7 +704,7 @@ export function startApp(root) {
         if (canPlot(out, latex)) {
           const b = el("button", { className: "chip small", type: "button", textContent: "Plot", title: "Add as a new row" });
           b.addEventListener("click", () => {
-            const eq = out.op === "solve" ? `${out.prefix}${latex}` : `y=${latex}`;
+            const eq = out.op === "solve" ? `${out.prefix}${latex}` : `${doc.mode === "3d" ? "z" : "y"}=${latex}`;
             addRow(eq, row.id);
           });
           nodes.push(b);
@@ -543,8 +717,12 @@ export function startApp(root) {
   }
 
   const canPlot = (out, latex) => {
-    if (out.op === "solve") return out.free.every((s) => s === "x" || s === "y") && !/\\mathrm\{i\}|\bi\b/.test(latex) && out.free.length > 0;
-    return out.free.length > 0 && out.free.every((s) => s === "x");
+    const three = doc.mode === "3d";
+    if (out.op === "solve") {
+      const ok = three ? ["x", "y", "z"] : ["x", "y"];
+      return out.free.every((s) => ok.includes(s) && s !== out.variable) && !/\\mathrm\{i\}|\bi\b/.test(latex) && out.free.length > 0;
+    }
+    return out.free.length > 0 && out.free.every((s) => (three ? s === "x" || s === "y" : s === "x"));
   };
 
   symbolic.onStatus = (status) => {
@@ -586,7 +764,7 @@ export function startApp(root) {
           P[name] = v;
           range.value = String(v);
           if (document.activeElement !== val) val.value = String(Number(v.toPrecision(8)));
-          graph.invalidate();
+          invalidate();
           updateLiveValues();
           saveSoon();
         };
@@ -648,23 +826,46 @@ export function startApp(root) {
 
   // ------------------------------------------------------------------ settings
   function syncSettingsUI() {
-    $("[data-set=mode]", dialog).value = doc.mode;
     for (const r of dialog.querySelectorAll("input[name=angle]")) r.checked = r.value === doc.settings.angle;
+    fillSelect($("[data-set=range3]", dialog), RANGE3_OPTIONS, doc.settings.range3);
+    fillSelect($("[data-set=vf-step]", dialog), VF_STEPS, doc.settings.vf.step);
+    $("[data-set=opacity3]", dialog).value = String(doc.settings.opacity3);
+    $("[data-set=vf-len]", dialog).value = doc.settings.vf.len;
+    $("[data-set=vf-style]", dialog).value = doc.settings.vf.style;
+    $("[data-set=vf-mag]", dialog).checked = doc.settings.vf.mag;
     for (const k of ["grid", "axes", "labels"]) $(`[data-set=${k}]`, dialog).checked = doc.settings[k];
     $("[data-set=theme]", dialog).value = currentTheme();
   }
 
+  function fillSelect(sel, values, current) {
+    const list = values.includes(current) ? values : [...values, current].sort((a, b) => a - b);
+    sel.replaceChildren(...list.map((v) => el("option", { value: String(v), textContent: String(v) })));
+    sel.value = String(current);
+  }
+
   dialog.addEventListener("change", (e) => {
     const t = e.target;
+    const key = t.dataset.set;
     if (t.name === "angle") {
       doc.settings.angle = t.value;
       refresh();
-    } else if (t.dataset.set === "theme") {
+    } else if (key === "theme") {
       setTheme(t.value);
-      graph.invalidate();
-    } else if (["grid", "axes", "labels"].includes(t.dataset.set)) {
-      doc.settings[t.dataset.set] = t.checked;
-      graph.setSettings(doc.settings);
+      invalidate();
+    } else if (["grid", "axes", "labels"].includes(key)) {
+      doc.settings[key] = t.checked;
+      pushSettings();
+    } else if (key === "range3") {
+      doc.settings.range3 = Number(t.value);
+      pushSettings();
+      graph3?.resetView();
+    } else if (key === "opacity3") {
+      doc.settings.opacity3 = Number(t.value);
+      pushSettings();
+    } else if (key?.startsWith("vf-")) {
+      const k = key.slice(3);
+      doc.settings.vf = { ...doc.settings.vf, [k]: k === "step" ? Number(t.value) : k === "mag" ? t.checked : t.value };
+      pushSettings();
     }
     saveSoon();
   });
@@ -681,21 +882,31 @@ export function startApp(root) {
         syncSettingsUI();
         dialog.showModal();
         break;
+      case "mode":
+        setMode(btn.dataset.mode);
+        break;
       case "zoom-in":
-        graph.view.zoomAt(graph.view.w / 2, graph.view.h / 2, 1.5);
-        graph.invalidate();
+      case "zoom-out": {
+        const f = btn.dataset.act === "zoom-in" ? 1.5 : 1 / 1.5;
+        if (doc.mode === "3d") graph3?.zoom(f);
+        else {
+          graph.view.zoomAt(graph.view.w / 2, graph.view.h / 2, f);
+          graph.invalidate();
+        }
         saveSoon();
         break;
-      case "zoom-out":
-        graph.view.zoomAt(graph.view.w / 2, graph.view.h / 2, 1 / 1.5);
-        graph.invalidate();
-        saveSoon();
-        break;
+      }
       case "reset":
-        graph.resetView();
+        if (doc.mode === "3d") graph3?.resetView();
+        else graph.resetView();
+        break;
+      case "spin":
+        spinning = !spinning;
+        btn.classList.toggle("on", spinning);
+        graph3?.setAutoRotate(spinning);
         break;
       case "share": {
-        doc.view = graph.view.toJSON();
+        persistView();
         const url = shareUrl(doc);
         try {
           await navigator.clipboard.writeText(url);
@@ -706,24 +917,26 @@ export function startApp(root) {
         break;
       }
       case "export":
-        doc.view = graph.view.toJSON();
+        persistView();
         download(exportJSON(doc), "better-desmos.json");
         break;
       case "import":
         $("[data-role=file]", root).click();
         break;
       case "png": {
-        const blob = await graph.toBlob();
+        const blob = await (doc.mode === "3d" && graph3 ? graph3.toBlob() : graph.toBlob());
         if (blob) download(blob, "graph.png");
         break;
       }
       case "clear":
         if (confirm("Remove every expression?")) {
           doc.rows = [newRow(null)];
+          doc.stash = {};
           doc.sliders = {};
           paramKey = "";
           rowEls.clear();
           symResults.clear();
+          opsResults.clear();
           renderRows();
           refresh();
           dialog.close();
@@ -753,34 +966,122 @@ export function startApp(root) {
     paramKey = "";
     rowEls.clear();
     symResults.clear();
+    opsResults.clear();
     graph.setView(doc.view);
-    graph.setSettings(doc.settings);
+    pushSettings();
+    if (graph3 && doc.view3) graph3.setView(doc.view3);
+    applyModeUI();
+    renderRows();
+    refresh();
+  }
+
+  function persistView() {
+    doc.view = graph.view.toJSON();
+    if (graph3) doc.view3 = graph3.getView();
+  }
+
+  // ------------------------------------------------------------------ 2D / 3D
+  let spinning = false;
+
+  async function ensureGraph3() {
+    if (graph3) return graph3;
+    graph3Loading ||= import("../render3d/scene3d.js").then(({ Graph3D }) => {
+      graph3 = new Graph3D(graphEl, {
+        view: doc.view3,
+        P,
+        onViewChange: () => saveSoon(),
+        onNotes: (notes) => {
+          glNote.hidden = !notes.length;
+          glNote.textContent = notes.join(" · ");
+        },
+      });
+      graph3.setSettings(doc.settings);
+      return graph3;
+    });
+    try {
+      return await graph3Loading;
+    } catch (e) {
+      graph3Loading = null;
+      throw e;
+    }
+  }
+
+  function applyModeUI() {
+    const three = doc.mode === "3d";
+    root.dataset.mode = doc.mode;
+    for (const b of root.querySelectorAll("[data-act=mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === doc.mode));
+    canvasEl.hidden = three;
+    if (!three) {
+      glNote.hidden = true;
+      graph.resize();
+      graph.invalidate();
+    }
+    document.title = `Better Desmos · ${doc.mode.toUpperCase()}`;
+    refreshInsertBar();
+    if (three) {
+      pill.hidden = false;
+      pill.textContent = graph3 ? "" : "Loading 3D…";
+      ensureGraph3().then(
+        (g) => {
+          if (doc.mode !== "3d") return;
+          pill.hidden = symbolic.status !== "loading";
+          g.resize();
+          g.setSettings(doc.settings);
+          pushItems();
+        },
+        () => {
+          toast("3D needs WebGL, which this browser has turned off.");
+          pill.hidden = true;
+          if (doc.mode === "3d") setMode("2d");
+        }
+      );
+    }
+  }
+
+  function setMode(next) {
+    if (next === doc.mode || (next !== "2d" && next !== "3d")) return;
+    stopAnimation();
+    doc.stash = { ...(doc.stash || {}), [doc.mode]: doc.rows };
+    doc.mode = next;
+    doc.rows = doc.stash[next] || exampleRows(next);
+    delete doc.stash[next];
+    rowEls.clear();
+    symResults.clear();
+    opsResults.clear();
+    paramKey = "";
+    applyModeUI();
     renderRows();
     refresh();
   }
 
   // insert toolbar
   const bar = $(".insert-bar", root);
-  for (const [label, latex, title] of INSERTS) {
-    const b = el("button", { className: "chip small", type: "button", textContent: label, title });
-    b.addEventListener("mousedown", (e) => e.preventDefault()); // keep the caret in the field
-    b.addEventListener("click", () => {
-      const target = lastFocused && lastFocused.isConnected ? lastFocused : rowEls.get(doc.rows[doc.rows.length - 1].id)?.mf;
-      if (!target) return;
-      target.focus();
-      target.insert(latex, { focus: true, feedback: false, selectionMode: "placeholder" });
-    });
-    bar.append(b);
+  function refreshInsertBar() {
+    bar.replaceChildren(
+      ...INSERTS.map(([label, latex, title]) => {
+        const b = el("button", { className: "chip small", type: "button", textContent: label, title });
+        b.addEventListener("mousedown", (e) => e.preventDefault()); // keep the caret in the field
+        b.addEventListener("click", () => {
+          const target = lastFocused && lastFocused.isConnected ? lastFocused : rowEls.get(doc.rows[doc.rows.length - 1].id)?.mf;
+          if (!target) return;
+          target.focus();
+          target.insert(typeof latex === "function" ? latex(doc.mode) : latex, { focus: true, feedback: false, selectionMode: "placeholder" });
+        });
+        return b;
+      })
+    );
   }
 
   // ------------------------------------------------------------------ boot
   graph.setSettings(doc.settings);
+  applyModeUI();
   renderRows();
   refresh();
   window.addEventListener("pagehide", persist);
   document.addEventListener("themechange", () => {
     applyMathTheme();
     graph.invalidate();
+    graph3?.invalidate();
   });
   applyMathTheme();
 }

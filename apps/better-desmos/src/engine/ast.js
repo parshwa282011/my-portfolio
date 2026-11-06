@@ -3,7 +3,8 @@
 //   ["$Sum"|"$Prod", body, index, lo, hi]
 //   ["$Int", body, variable, lo|null, hi|null]
 //   ["$Lim", body, variable, to, direction]
-//   ["D", body, variable]
+//   ["D", body, variable]          (higher / mixed partials are nested D's)
+//   ["$Vec", ...components]        (angle-bracket vector  <P, Q, R>)
 
 export const CONSTANTS = {
   Pi: Math.PI,
@@ -27,7 +28,7 @@ export const BUILTIN_FUNCS = new Set([
   "Arsinh", "Arcosh", "Artanh", "Arcsinh", "Arccosh", "Arctanh",
   "Exp", "Ln", "Log", "Lb", "Lg", "Abs", "Floor", "Ceil", "Round", "Sign",
   "Max", "Min", "Mod", "Gamma", "Factorial", "Erf", "Square",
-  "$Sum", "$Prod", "$Int", "$Lim", "D", "Tuple", "List", "Equal", "Less",
+  "$Sum", "$Prod", "$Int", "$Lim", "$Vec", "D", "Tuple", "List", "Equal", "Less",
   "LessEqual", "Greater", "GreaterEqual",
 ]);
 
@@ -80,6 +81,14 @@ export function normalize(a) {
       const v = isArr(fn) && fn[0] === "Function" ? fn[2] : "x";
       return ["$Lim", normalize(fn), v, normalize(r[1]), r[2] === undefined ? 0 : normalize(r[2])];
     }
+    case "D": {
+      // d²/dxdy f  ->  D(D(f, y), x)
+      let out = normalize(r[0]);
+      for (const v of r.slice(1)) out = ["D", out, v];
+      return out;
+    }
+    case "AngleBracket":
+      return ["$Vec", ...r.map(normalize)];
     case "Error":
       return a; // surfaced by findError
     default:
