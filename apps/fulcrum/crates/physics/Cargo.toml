@@ -1,0 +1,8 @@
+[package]
+name = "fulcrum-physics"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fulcrum-core.workspace = true
+rapier3d = { version = "0.36", default-features = false, features = ["dim3", "f32", "std", "enhanced-determinism"] }

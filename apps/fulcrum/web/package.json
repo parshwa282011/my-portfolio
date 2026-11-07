@@ -1,0 +1,17 @@
+{
+  "name": "fulcrum-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "wasm": "cd .. && cargo build -p fulcrum-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir web/src/pkg target/wasm32-unknown-unknown/release/fulcrum_wasm.wasm",
+    "dev": "npm run wasm && vite",
+    "build": "npm run wasm && tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.60",
+    "typescript": "^5.6.0",
+    "vite": "^7.0.0"
+  }
+}

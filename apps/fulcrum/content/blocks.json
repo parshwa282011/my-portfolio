@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "blocks": [
+    { "name": "air", "solid": false, "render": "none", "mass_kg": 0 },
+    { "name": "stone", "color": [124, 126, 130], "mass_kg": 2600, "hardness": 3.0 },
+    { "name": "dirt", "color": [112, 82, 56], "mass_kg": 1500, "hardness": 0.6 },
+    { "name": "grass", "color": [92, 150, 64], "mass_kg": 1500, "hardness": 0.7 },
+    { "name": "sand", "color": [218, 204, 150], "mass_kg": 1600, "hardness": 0.5 },
+    { "name": "water", "solid": false, "fluid": true, "render": "fluid", "color": [52, 106, 196], "mass_kg": 1000, "hardness": 0 },
+    { "name": "bedrock", "color": [48, 48, 52], "mass_kg": 3000, "hardness": 1000 },
+    { "name": "log", "color": [110, 80, 48], "mass_kg": 700, "hardness": 1.6, "assemblable": true },
+    { "name": "leaves", "color": [58, 124, 54], "render": "cutout", "mass_kg": 40, "hardness": 0.2 },
+    { "name": "snow", "color": [236, 240, 245], "mass_kg": 300, "hardness": 0.3 },
+    { "name": "planks", "color": [176, 138, 84], "mass_kg": 60, "hardness": 1.2, "assemblable": true, "displace": 1.0, "drag_cd": 1.0 },
+    { "name": "hull_steel", "color": [150, 158, 168], "mass_kg": 220, "hardness": 4.0, "assemblable": true, "displace": 1.0, "drag_cd": 1.0 },
+    { "name": "frame", "color": [196, 170, 120], "mass_kg": 5, "hardness": 0.8, "assemblable": true, "displace": 0.02, "drag_cd": 0.3 },
+    { "name": "gas_cell", "color": [236, 226, 204], "mass_kg": 0, "face_mass_kg": 0.3, "hardness": 0.3, "assemblable": true, "displace": 1.0, "drag_cd": 0.6, "gas_density": 0.0899, "role": "gas_cell" },
+    { "name": "propeller", "color": [90, 98, 110], "mass_kg": 40, "hardness": 1.5, "assemblable": true, "displace": 0.1, "drag_cd": 0.5, "thrust_n": 400, "role": "propeller" },
+    { "name": "helm", "color": [150, 72, 52], "mass_kg": 25, "hardness": 1.0, "assemblable": true, "displace": 0.4, "drag_cd": 0.8, "role": "helm" }
+  ]
+}

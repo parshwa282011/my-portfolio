@@ -1,0 +1,15 @@
+[package]
+name = "fulcrum-wasm"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fulcrum-core.workspace = true
+fulcrum-voxel.workspace = true
+fulcrum-physics.workspace = true
+fulcrum-game.workspace = true
+wasm-bindgen = "=0.2.130"
+serde_json.workspace = true

@@ -1,0 +1,9 @@
+[package]
+name = "fulcrum-game"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fulcrum-core.workspace = true
+fulcrum-voxel.workspace = true
+fulcrum-physics.workspace = true

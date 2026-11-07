@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fulcrum · block world with real physics</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f172a'/%3E%3Cpath d='M6 22h20L16 8z' fill='%2360a5fa'/%3E%3C/svg%3E" />
+    <script type="module" crossorigin src="./assets/index-BRsRBfVv.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CG35Q_L_.css">
+  </head>
+  <body>
+    <canvas id="c" tabindex="0"></canvas>
+
+    <div id="hud" hidden>
+      <div id="crosshair"></div>
+      <div id="info"></div>
+      <div id="ship" hidden></div>
+      <div id="toast"></div>
+      <div id="hotbar"></div>
+    </div>
+
+    <div id="menu">
+      <div class="card">
+        <a class="back" href="../../projects.html">← Projects</a>
+        <h1>Fulcrum</h1>
+        <p class="tag">A block world where what you build obeys real physics.</p>
+        <p id="error" class="error" hidden></p>
+        <button id="play" class="primary" disabled>Loading…</button>
+        <div class="row">
+          <label>Graphics
+            <select id="quality"></select>
+          </label>
+          <label class="check"><input type="checkbox" id="auto" /> Auto-adjust</label>
+        </div>
+        <details>
+          <summary>Controls</summary>
+          <ul class="keys">
+            <li><b>W A S D</b> move · <b>Space</b> jump · <b>Shift</b> sneak · <b>Ctrl</b> sprint · <b>V</b> fly</li>
+            <li><b>Left click</b> break · <b>Right click</b> place · <b>1–9 / wheel</b> choose block</li>
+            <li><b>F</b> assemble the structure you look at into a physics body</li>
+            <li><b>R</b> sit at the helm / get off · <b>W S</b> throttle · <b>A D</b> steer · <b>G</b> put the structure back</li>
+            <li><b>Tab</b> settings and physics · <b>Esc</b> release the mouse</li>
+          </ul>
+        </details>
+        <p class="note">Needs a browser with WebGPU (recent Chrome, Edge or Safari).</p>
+      </div>
+    </div>
+
+    <div id="settings" hidden>
+      <div class="card wide">
+        <div class="head"><h2>Settings</h2><button id="close-settings">Done</button></div>
+        <section>
+          <h3>Graphics</h3>
+          <label>Quality <select id="quality2"></select></label>
+          <p class="note" id="quality-note"></p>
+        </section>
+        <section>
+          <h3>Physics</h3>
+          <div class="seg">
+            <label><input type="radio" name="pmode" value="simple" checked /> Simple (realistic preset)</label>
+            <label><input type="radio" name="pmode" value="complex" /> Complex (choose each effect)</label>
+          </div>
+          <div id="phenomena"></div>
+        </section>
+        <section>
+          <h3>Examples</h3>
+          <p class="note">Builds an example in front of you. Look at it, press <b>R</b> to sit at the helm.</p>
+          <div class="seg">
+            <button id="demo-boat">Boat on a pool</button>
+            <button id="demo-airship">Hydrogen airship</button>
+          </div>
+        </section>
+        <section>
+          <h3>World</h3>
+          <label>Seed <input id="seed" type="number" /></label>
+          <button id="new-world">New world</button>
+        </section>
+      </div>
+    </div>
+
+  </body>
+</html>

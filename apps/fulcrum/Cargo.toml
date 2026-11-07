@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/voxel", "crates/physics", "crates/game", "crates/wasm", "crates/validate"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+fulcrum-core = { path = "crates/core" }
+fulcrum-voxel = { path = "crates/voxel" }
+fulcrum-physics = { path = "crates/physics" }
+fulcrum-game = { path = "crates/game" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+panic = "abort"
+
+[profile.dev.package."*"]
+opt-level = 2
